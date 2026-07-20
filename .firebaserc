@@ -1,0 +1,8 @@
+{
+  "projects": {
+    "default": "extintores-tienda---desarrollo",
+    "dev": "extintores-tienda---desarrollo"
+  },
+  "targets": {},
+  "etags": {}
+}
