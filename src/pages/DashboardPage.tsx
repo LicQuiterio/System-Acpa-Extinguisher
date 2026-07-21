@@ -26,7 +26,9 @@ export function DashboardPage() {
       )}
 
       <p>Sesión iniciada: {user?.email}</p>
-
+      <button type="button" onClick={() => navigate('/clients')}>
+        Clientes
+      </button>
       <button type="button" onClick={handleLogout}>
         Cerrar sesión
       </button>
