@@ -2,6 +2,7 @@ import {
     addDoc,
     collection,
     doc,
+    getDoc,
     getDocs,
     orderBy,
     query,
@@ -27,6 +28,21 @@ export async function getClients(businessId:string): Promise<Client[]> {
         id: clientDocument.id,
         ...clientDocument.data(),
     })) as Client[]
+}
+
+export async function getClient(businessId: string, clientId: string): Promise<Client | null> {
+    const clientReference = doc(db, 'businesses', businessId, 'clients', clientId)
+
+    const snapshot = await getDoc(clientReference)
+
+    if (!snapshot.exists()) {
+        return null
+    }
+
+    return {
+        id: snapshot.id,
+        ...snapshot.data(),
+    } as Client
 }
 
 export async function createClient(

@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useAuth } from '../auth/useAuth'
 import { createClient, getClients, } from '../services/clientService'
 import type { Client, ClientInput } from '../types/client'
+import { Link } from 'react-router-dom'
 
 const emptyClient: ClientInput = {
     name: '',
@@ -209,7 +210,11 @@ export function ClientsPage() {
                     <tbody>
                         {clients.map((client) => (
                             <tr key = {client.id}>
-                                <td>{client.name}</td>
+                                <td>
+                                    <Link to={`/clients/${client.id}`}>
+                                    {client.name}
+                                    </Link>
+                                </td>
                                 <td>{client.contactName}</td>
                                 <td>{client.phone}</td>
                                 <td>{client.active ? 'activo' : 'inactivo'}</td>
