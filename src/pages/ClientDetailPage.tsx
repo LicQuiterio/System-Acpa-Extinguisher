@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
+import { ClientLocationsSection } from '../components/ClientLocationsSection'
 import { 
     getClient,
     setClientActive,
@@ -289,6 +290,8 @@ export function ClientDetailPage() {
                         </form>
                     </section>
                 )}
+                <br></br>
+                <ClientLocationsSection clientId={client.id} />
                 </>
             )}
         </main>
