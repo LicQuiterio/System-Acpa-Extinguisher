@@ -73,6 +73,42 @@ service cloud.firestore {
   	allow delete: if false;
       }
 
+      match /extinguishers/{extinguisherId} {
+        allow read: if isActiveMember(businessId);
+
+        allow create: if canOperate(businessId)
+          && request.resource.data.active == true
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.updatedBy == request.auth.uid
+          && exists(
+            /databases/$(database)/documents/businesses/$(businessId)/clients/$(request.resource.data.clientId)
+          )
+          && exists(
+            /databases/$(database)/documents/businesses/$(businessId)/locations/$(request.resource.data.locationId)
+          )
+          && get(
+            /databases/$(database)/documents/businesses/$(businessId)/locations/$(request.resource.data.locationId)
+          ).data.clientId == request.resource.data.clientId;
+
+        allow update: if canOperate(businessId)
+          && request.resource.data.clientId == resource.data.clientId
+          && request.resource.data.locationId == resource.data.locationId
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.createdBy == resource.data.createdBy
+          && request.resource.data.updatedBy == request.auth.uid
+          && exists(
+            /databases/$(database)/documents/businesses/$(businessId)/clients/$(resource.data.clientId)
+          )
+          && exists(
+            /databases/$(database)/documents/businesses/$(businessId)/locations/$(resource.data.locationId)
+          )
+          && get(
+            /databases/$(database)/documents/businesses/$(businessId)/locations/$(resource.data.locationId)
+          ).data.clientId == resource.data.clientId;
+
+        allow delete: if false;
+      }
+
     match /{document=**} {
         allow read: if isActiveMember(businessId);
 	allow write: if false;

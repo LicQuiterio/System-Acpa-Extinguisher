@@ -10,7 +10,7 @@ import type {
   ClientLocation,
   ClientLocationInput,
 } from '../types/client'
-
+import { LocationExtinguishersSection } from './LocationExtinguishersSection'
 type ClientLocationsSectionProps = {
     clientId: string
 }
@@ -373,6 +373,10 @@ async function handleSubmit(event: FormEvent<HTMLFormElement>) {
                                 </button>
                               </p>
                             )}
+                            <LocationExtinguishersSection
+                              clientId={clientId}
+                              locationId={location.id}
+                            />
                         </li>
                     ))}
                 </ul>
