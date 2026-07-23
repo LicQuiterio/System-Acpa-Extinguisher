@@ -15,3 +15,7 @@ export type Member = {
     role: UserRole 
     active: boolean
 }
+
+export type MemberWithId = Member & {
+  id: string
+}

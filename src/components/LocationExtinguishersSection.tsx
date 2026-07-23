@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useAuth } from '../auth/useAuth'
+import { ExtinguisherMaintenancesSection } from './ExtinguisherMaintenancesSection'
 import {
   createExtinguisher,
   getLocationExtinguishers,
@@ -536,6 +537,11 @@ export function LocationExtinguishersSection({
                     </button>
                   </p>
                 )}
+                <ExtinguisherMaintenancesSection
+                  clientId={clientId}
+                  locationId={locationId}
+                  extinguisher={extinguisher}
+                />
               </li>
             ))}
         </ul>

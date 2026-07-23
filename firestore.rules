@@ -27,10 +27,94 @@ service cloud.firestore {
         ];
     }
 
+function isTechnician(businessId) {
+  return isActiveMember(businessId)
+    && get(
+      /databases/$(database)/documents/members/$(request.auth.uid)
+    ).data.role == 'technician';
+}
+
+function validTechnicianAssignment(
+  businessId,
+  technicianId,
+  technicianName
+) {
+  return exists(
+      /databases/$(database)/documents/members/$(technicianId)
+    )
+    && get(
+      /databases/$(database)/documents/members/$(technicianId)
+    ).data.businessId == businessId
+    && get(
+      /databases/$(database)/documents/members/$(technicianId)
+    ).data.active == true
+    && get(
+      /databases/$(database)/documents/members/$(technicianId)
+    ).data.role == 'technician'
+    && (
+      get(
+        /databases/$(database)/documents/members/$(technicianId)
+      ).data.displayName == technicianName
+      || (
+        get(
+          /databases/$(database)/documents/members/$(technicianId)
+        ).data.displayName == ''
+        && get(
+          /databases/$(database)/documents/members/$(technicianId)
+        ).data.email == technicianName
+      )
+    );
+}
+
+function validExtinguisherRelation(
+  businessId,
+  clientId,
+  locationId,
+  extinguisherId
+) {
+  return exists(
+      /databases/$(database)/documents/businesses/$(businessId)/clients/$(clientId)
+    )
+    && exists(
+      /databases/$(database)/documents/businesses/$(businessId)/locations/$(locationId)
+    )
+    && exists(
+      /databases/$(database)/documents/businesses/$(businessId)/extinguishers/$(extinguisherId)
+    )
+    && get(
+      /databases/$(database)/documents/businesses/$(businessId)/locations/$(locationId)
+    ).data.clientId == clientId
+    && get(
+      /databases/$(database)/documents/businesses/$(businessId)/extinguishers/$(extinguisherId)
+    ).data.clientId == clientId
+    && get(
+      /databases/$(database)/documents/businesses/$(businessId)/extinguishers/$(extinguisherId)
+    ).data.locationId == locationId;
+}
+
+function technicianUpdatesServiceDates(businessId) {
+  return isTechnician(businessId)
+    && request.resource.data
+      .diff(resource.data)
+      .affectedKeys()
+      .hasOnly([
+        'lastServiceDate',
+        'nextServiceDate',
+        'updatedAt',
+        'updatedBy'
+      ])
+    && request.resource.data.updatedBy == request.auth.uid;
+}
+
     match /members/{userId} {
-      allow get: if signedIn() && request.auth.uid == userId;
-      allow list, create, update, delete: if false;
-    }
+  allow get: if signedIn() && request.auth.uid == userId;
+
+  allow list: if isActiveMember(resource.data.businessId)
+    && resource.data.role == 'technician'
+    && resource.data.active == true;
+
+  allow create, update, delete: if false;
+}
 
     match /businesses/{businessId} {
       allow read: if isActiveMember(businessId);
@@ -72,6 +156,59 @@ service cloud.firestore {
 
   	allow delete: if false;
       }
+	
+	match /maintenances/{maintenanceId} {
+  allow read: if isActiveMember(businessId);
+
+allow create: if (
+    canOperate(businessId)
+    || (
+      isTechnician(businessId)
+      && request.resource.data.technicianId == request.auth.uid
+    )
+  )
+  && validTechnicianAssignment(
+    businessId,
+    request.resource.data.technicianId,
+    request.resource.data.technicianName
+  )
+  && request.resource.data.createdBy == request.auth.uid
+  && request.resource.data.updatedBy == request.auth.uid
+  && validExtinguisherRelation(
+    businessId,
+    request.resource.data.clientId,
+    request.resource.data.locationId,
+    request.resource.data.extinguisherId
+  );
+
+  allow update: if (
+      canOperate(businessId)
+      || (
+        isTechnician(businessId)
+        && resource.data.createdBy == request.auth.uid
+        && resource.data.technicianId == request.auth.uid
+      )
+    )
+    && request.resource.data.clientId == resource.data.clientId
+    && request.resource.data.locationId == resource.data.locationId
+    && request.resource.data.extinguisherId
+      == resource.data.extinguisherId
+    && request.resource.data.technicianId
+      == resource.data.technicianId
+    && request.resource.data.technicianName
+      == resource.data.technicianName
+    && request.resource.data.createdAt == resource.data.createdAt
+    && request.resource.data.createdBy == resource.data.createdBy
+    && request.resource.data.updatedBy == request.auth.uid
+    && validExtinguisherRelation(
+      businessId,
+      resource.data.clientId,
+      resource.data.locationId,
+      resource.data.extinguisherId
+    );
+
+  allow delete: if false;
+}
 
       match /extinguishers/{extinguisherId} {
         allow read: if isActiveMember(businessId);
@@ -90,21 +227,21 @@ service cloud.firestore {
             /databases/$(database)/documents/businesses/$(businessId)/locations/$(request.resource.data.locationId)
           ).data.clientId == request.resource.data.clientId;
 
-        allow update: if canOperate(businessId)
-          && request.resource.data.clientId == resource.data.clientId
-          && request.resource.data.locationId == resource.data.locationId
-          && request.resource.data.createdAt == resource.data.createdAt
-          && request.resource.data.createdBy == resource.data.createdBy
-          && request.resource.data.updatedBy == request.auth.uid
-          && exists(
-            /databases/$(database)/documents/businesses/$(businessId)/clients/$(resource.data.clientId)
-          )
-          && exists(
-            /databases/$(database)/documents/businesses/$(businessId)/locations/$(resource.data.locationId)
-          )
-          && get(
-            /databases/$(database)/documents/businesses/$(businessId)/locations/$(resource.data.locationId)
-          ).data.clientId == resource.data.clientId;
+        allow update: if (
+    canOperate(businessId)
+    || technicianUpdatesServiceDates(businessId)
+  )
+  && request.resource.data.clientId == resource.data.clientId
+  && request.resource.data.locationId == resource.data.locationId
+  && request.resource.data.createdAt == resource.data.createdAt
+  && request.resource.data.createdBy == resource.data.createdBy
+  && request.resource.data.updatedBy == request.auth.uid
+  && validExtinguisherRelation(
+    businessId,
+    resource.data.clientId,
+    resource.data.locationId,
+    extinguisherId
+  );
 
         allow delete: if false;
       }
