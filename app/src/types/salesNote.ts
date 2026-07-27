@@ -172,6 +172,14 @@ export type Payment = {
   active: boolean
 }
 
+export type SalesNoteDetail = Omit<
+  SalesNote,
+  'delivery'
+> & {
+  delivery: SalesNoteHistoryDelivery
+  payments: Payment[]
+}
+
 export type PaymentInput = {
   amountCents: number
   method: PaymentMethod

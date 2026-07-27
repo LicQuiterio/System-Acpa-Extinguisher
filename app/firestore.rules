@@ -512,7 +512,11 @@ function technicianUpdatesServiceDates(businessId) {
 }
 
     match /members/{userId} {
-  allow get: if signedIn() && request.auth.uid == userId;
+  allow get: if signedIn()
+    && (
+      request.auth.uid == userId
+      || isActiveMember(resource.data.businessId)
+    );
 
   allow list: if isActiveMember(resource.data.businessId)
     && resource.data.role == 'technician'

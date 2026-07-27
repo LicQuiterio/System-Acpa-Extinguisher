@@ -42,3 +42,52 @@ export async function getActiveTechnicians(
       a.displayName.localeCompare(b.displayName, 'es'),
     )
 }
+
+export async function getMemberDisplayNames(
+  businessId: string,
+  userIds: readonly string[],
+): Promise<Record<string, string>> {
+  if (!businessId.trim()) {
+    throw new Error('El negocio es obligatorio')
+  }
+
+  const uniqueUserIds = [
+    ...new Set(
+      userIds
+        .map((userId) => userId.trim())
+        .filter(Boolean),
+    ),
+  ]
+
+  const entries = await Promise.all(
+    uniqueUserIds.map(async (userId) => {
+      try {
+        const memberSnapshot = await getDoc(
+          doc(db, 'members', userId),
+        )
+
+        if (!memberSnapshot.exists()) {
+          return [userId, userId] as const
+        }
+
+        const member =
+          memberSnapshot.data() as Member
+
+        if (member.businessId !== businessId) {
+          return [userId, userId] as const
+        }
+
+        const displayName =
+          member.displayName.trim() ||
+          member.email.trim() ||
+          userId
+
+        return [userId, displayName] as const
+      } catch {
+        return [userId, userId] as const
+      }
+    }),
+  )
+
+  return Object.fromEntries(entries)
+}

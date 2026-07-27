@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   orderBy,
   query,
@@ -21,6 +22,8 @@ import {
 import type {
   CreateSalesNoteInput,
   CreateSalesNoteResult,
+  Payment,
+  SalesNoteDetail,
   SalesNoteHistoryDelivery,
   SalesNoteHistoryItem,
   SalesNoteItem,
@@ -169,6 +172,12 @@ type SalesNoteDeliverySource = {
   }
   deliveryStatus?: 'pending' | 'delivered'
 }
+
+type SalesNoteDetailDocument = Omit<
+  SalesNoteDetail,
+  'id' | 'delivery' | 'payments'
+> &
+  SalesNoteDeliverySource
 
 export function resolveHistoryDelivery(
   note: SalesNoteDeliverySource,
@@ -480,5 +489,58 @@ export async function getSalesNotesHistory(
       delivery: resolveHistoryDelivery(note),
     }
   })
+}
+
+export async function getSalesNoteDetail(
+  businessId: string,
+  noteId: string,
+): Promise<SalesNoteDetail | null> {
+  if (!businessId.trim()) {
+    throw new Error('El negocio es obligatorio')
+  }
+
+  if (!noteId.trim()) {
+    throw new Error('La nota es obligatoria')
+  }
+
+  const noteReference = doc(
+    db,
+    'businesses',
+    businessId,
+    'salesNotes',
+    noteId,
+  )
+
+  const noteSnapshot = await getDoc(noteReference)
+
+  if (!noteSnapshot.exists()) {
+    return null
+  }
+
+  const paymentsQuery = query(
+    collection(noteReference, 'payments'),
+    orderBy('paidAt', 'asc'),
+  )
+
+  const paymentsSnapshot =
+    await getDocs(paymentsQuery)
+
+  const note =
+    noteSnapshot.data() as SalesNoteDetailDocument
+
+  const payments = paymentsSnapshot.docs.map(
+    (paymentDocument) =>
+      ({
+        id: paymentDocument.id,
+        ...paymentDocument.data(),
+      }) as Payment,
+  )
+
+  return {
+    id: noteSnapshot.id,
+    ...note,
+    delivery: resolveHistoryDelivery(note),
+    payments,
+  }
 }
 

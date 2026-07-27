@@ -363,7 +363,11 @@ export function SalesNotesHistoryPage() {
             <tbody>
               {filteredNotes.map((note) => (
                 <tr key={note.id}>
-                  <td>{note.folioDisplay}</td>
+                  <td>
+                      <Link to={`/sales/${note.id}`}>
+                        {note.folioDisplay}
+                      </Link>
+                    </td>
                   <td>{getCustomerName(note)}</td>
                   <td>
                     {formatDate(
