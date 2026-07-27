@@ -1,0 +1,906 @@
+rules_version='2'
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+   function signedIn() {
+      return request.auth != null;
+    }
+
+    function isActiveMember(businessId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/members/$(request.auth.uid))
+        && get(/databases/$(database)/documents/members/$(request.auth.uid)).data.businessId == businessId
+        && get(/databases/$(database)/documents/members/$(request.auth.uid)).data.active == true;
+    }
+
+    function isOwner(businessId) {
+      return isActiveMember(businessId)
+        && get(/databases/$(database)/documents/members/$(request.auth.uid)).data.role == 'owner';
+    }
+
+    function canOperate(businessId) {
+      return isActiveMember(businessId)
+        && get(/databases/$(database)/documents/members/$(request.auth.uid)).data.role in [
+          'owner',
+          'admin',
+          'assistant'
+        ];
+    }
+    function canManageSalesData(businessId) {
+      return isActiveMember(businessId)
+        && get(
+          /databases/$(database)/documents/members/$(request.auth.uid)
+        ).data.role in [
+          'owner',
+          'admin',
+          'driver'
+        ];
+    }
+
+    function isValidMunicipality(municipality) {
+      return municipality in [
+        'Bacalar',
+        'Benito Juárez',
+        'Cozumel',
+        'Felipe Carrillo Puerto',
+        'Isla Mujeres',
+        'José María Morelos',
+        'Lázaro Cárdenas',
+        'Othón P. Blanco',
+        'Playa del Carmen',
+        'Puerto Morelos',
+        'Tulum'
+      ];
+    }
+
+    function isSalesClientDocument(data) {
+      return 'schemaVersion' in data
+        && data.schemaVersion == 2;
+    }
+
+    function validSalesClientData(businessId, data) {
+      return data.keys().hasOnly([
+          'schemaVersion',
+          'type',
+          'companyName',
+          'contactName',
+          'phone',
+          'email',
+          'address',
+          'serviceAreaId',
+          'serviceAreaSnapshot',
+          'active',
+          'createdAt',
+          'updatedAt',
+          'createdBy',
+          'updatedBy',
+          'name',
+          'legalName',
+          'rfc',
+          'notes'
+        ])
+        && data.schemaVersion == 2
+        && data.type in ['company', 'individual']
+        && data.companyName is string
+        && (
+          (
+            data.type == 'company'
+            && data.companyName.size() > 0
+            && data.name == data.companyName
+          )
+          || (
+            data.type == 'individual'
+            && data.companyName == ''
+            && data.name == data.contactName
+          )
+        )
+        && data.companyName.size() <= 160
+        && data.contactName is string
+        && data.contactName.size() > 0
+        && data.contactName.size() <= 120
+        && data.phone is string
+        && data.phone.size() > 0
+        && data.phone.size() <= 30
+        && data.email is string
+        && data.email.size() <= 254
+        && data.address is string
+        && data.address.size() > 0
+        && data.address.size() <= 500
+        && data.serviceAreaId is string
+        && data.serviceAreaId.size() > 0
+        && data.serviceAreaSnapshot is map
+        && data.serviceAreaSnapshot.keys().hasOnly([
+          'serviceAreaId',
+          'municipality',
+          'locality',
+          'displayName'
+        ])
+        && data.serviceAreaSnapshot.serviceAreaId
+          == data.serviceAreaId
+        && data.active is bool
+        && data.legalName == data.companyName
+        && data.rfc == ''
+        && data.notes == ''
+        && exists(
+          /databases/$(database)/documents/businesses/$(businessId)/serviceAreas/$(data.serviceAreaId)
+        )
+        && get(
+          /databases/$(database)/documents/businesses/$(businessId)/serviceAreas/$(data.serviceAreaId)
+        ).data.active == true
+        && get(
+          /databases/$(database)/documents/businesses/$(businessId)/serviceAreas/$(data.serviceAreaId)
+        ).data.municipality
+          == data.serviceAreaSnapshot.municipality
+        && get(
+          /databases/$(database)/documents/businesses/$(businessId)/serviceAreas/$(data.serviceAreaId)
+        ).data.locality
+          == data.serviceAreaSnapshot.locality
+        && get(
+          /databases/$(database)/documents/businesses/$(businessId)/serviceAreas/$(data.serviceAreaId)
+        ).data.displayName
+          == data.serviceAreaSnapshot.displayName;
+    }
+
+    function validSalesNoteAmounts(amounts) {
+      return amounts is map
+        && amounts.keys().hasOnly([
+          'subtotalCents',
+          'applyVat',
+          'vatRateBasisPoints',
+          'vatAmountCents',
+          'applyResicoWithholding',
+          'resicoRateBasisPoints',
+          'resicoAmountCents',
+          'totalCents',
+          'paidCents',
+          'balanceCents'
+        ])
+        && amounts.subtotalCents is int
+        && amounts.subtotalCents >= 0
+        && amounts.applyVat is bool
+        && amounts.vatRateBasisPoints == 1600
+        && amounts.vatAmountCents is int
+        && amounts.vatAmountCents >= 0
+        && (
+          amounts.applyVat == true
+          || amounts.vatAmountCents == 0
+        )
+        && amounts.applyResicoWithholding is bool
+        && amounts.resicoRateBasisPoints == 125
+        && amounts.resicoAmountCents is int
+        && amounts.resicoAmountCents >= 0
+        && (
+          amounts.applyResicoWithholding == true
+          || amounts.resicoAmountCents == 0
+        )
+        && amounts.totalCents is int
+        && amounts.totalCents
+          == amounts.subtotalCents
+            + amounts.vatAmountCents
+            - amounts.resicoAmountCents
+        && amounts.totalCents >= 0
+        && amounts.paidCents is int
+        && amounts.paidCents >= 0
+        && amounts.paidCents <= amounts.totalCents
+        && amounts.balanceCents is int
+        && amounts.balanceCents
+          == amounts.totalCents
+            - amounts.paidCents;
+    }
+
+    function validSalesNoteClient(
+      businessId,
+      data
+    ) {
+      return data.clientId is string
+        && exists(
+          /databases/$(database)/documents/businesses/$(businessId)/clients/$(data.clientId)
+        )
+        && get(
+          /databases/$(database)/documents/businesses/$(businessId)/clients/$(data.clientId)
+        ).data.schemaVersion == 2
+        && get(
+          /databases/$(database)/documents/businesses/$(businessId)/clients/$(data.clientId)
+        ).data.active == true
+        && data.customerSnapshot is map
+        && data.customerSnapshot.keys().hasOnly([
+          'type',
+          'companyName',
+          'contactName',
+          'phone',
+          'email',
+          'address',
+          'serviceAreaId',
+          'municipality',
+          'locality',
+          'serviceAreaDisplayName'
+        ])
+        && data.customerSnapshot.type
+          == get(
+            /databases/$(database)/documents/businesses/$(businessId)/clients/$(data.clientId)
+          ).data.type
+        && data.customerSnapshot.companyName
+          == get(
+            /databases/$(database)/documents/businesses/$(businessId)/clients/$(data.clientId)
+          ).data.companyName
+        && data.customerSnapshot.contactName
+          == get(
+            /databases/$(database)/documents/businesses/$(businessId)/clients/$(data.clientId)
+          ).data.contactName
+        && data.customerSnapshot.phone
+          == get(
+            /databases/$(database)/documents/businesses/$(businessId)/clients/$(data.clientId)
+          ).data.phone
+        && data.customerSnapshot.email
+          == get(
+            /databases/$(database)/documents/businesses/$(businessId)/clients/$(data.clientId)
+          ).data.email
+        && data.customerSnapshot.address
+          == get(
+            /databases/$(database)/documents/businesses/$(businessId)/clients/$(data.clientId)
+          ).data.address
+        && data.customerSnapshot.serviceAreaId
+          == get(
+            /databases/$(database)/documents/businesses/$(businessId)/clients/$(data.clientId)
+          ).data.serviceAreaId
+        && data.customerSnapshot.municipality
+          == get(
+            /databases/$(database)/documents/businesses/$(businessId)/clients/$(data.clientId)
+          ).data.serviceAreaSnapshot.municipality
+        && data.customerSnapshot.locality
+          == get(
+            /databases/$(database)/documents/businesses/$(businessId)/clients/$(data.clientId)
+          ).data.serviceAreaSnapshot.locality
+        && data.customerSnapshot.serviceAreaDisplayName
+          == get(
+            /databases/$(database)/documents/businesses/$(businessId)/clients/$(data.clientId)
+          ).data.serviceAreaSnapshot.displayName;
+    }
+
+    function validSalesNoteTerms(terms) {
+      return terms is map
+        && terms.keys().hasOnly([
+          'deliveryTime',
+          'warranty',
+          'clauses',
+          'additionalCondition'
+        ])
+        && terms.deliveryTime is string
+        && terms.deliveryTime.size() > 0
+        && terms.deliveryTime.size() <= 200
+        && terms.warranty is string
+        && terms.warranty.size() > 0
+        && terms.warranty.size() <= 200
+        && terms.clauses is list
+        && terms.clauses.size() <= 20
+        && terms.additionalCondition is string
+        && terms.additionalCondition.size() <= 1000;
+    }
+
+    function validPaymentStatus(data) {
+      return (
+          data.amounts.paidCents == 0
+          && data.paymentStatus == 'unpaid'
+        )
+        || (
+          data.amounts.paidCents > 0
+          && data.amounts.paidCents
+            < data.amounts.totalCents
+          && data.paymentStatus == 'partial'
+        )
+        || (
+          data.amounts.totalCents > 0
+          && data.amounts.paidCents
+            == data.amounts.totalCents
+          && data.paymentStatus == 'paid'
+        );
+    }
+
+    function validAutomaticSalesNote(
+      businessId,
+      noteId,
+      data
+    ) {
+      return data.keys().hasOnly([
+          'folioNumber',
+          'folioDisplay',
+          'folioMode',
+          'manualFolioReason',
+          'issuedAt',
+          'clientId',
+          'customerSnapshot',
+          'items',
+          'amounts',
+          'terms',
+          'documentStatus',
+          'paymentStatus',
+          'deliveryStatus',
+          'notes',
+          'cancellation',
+          'createdAt',
+          'updatedAt',
+          'createdBy',
+          'updatedBy'
+        ])
+        && data.folioNumber is int
+        && data.folioNumber >= 0
+        && data.folioDisplay is string
+        && data.folioDisplay.matches('[0-9]{5}')
+        && data.folioMode == 'automatic'
+        && data.manualFolioReason == null
+        && data.issuedAt == request.time
+        && data.items is list
+        && data.items.size() > 0
+        && data.items.size() <= 100
+        && validSalesNoteClient(
+          businessId,
+          data
+        )
+        && validSalesNoteAmounts(data.amounts)
+        && validSalesNoteTerms(data.terms)
+        && data.documentStatus == 'issued'
+        && validPaymentStatus(data)
+        && data.deliveryStatus == 'pending'
+        && data.notes is string
+        && data.notes.size() <= 2000
+        && data.cancellation == null
+        && data.createdAt == request.time
+        && data.updatedAt == request.time
+        && data.createdBy == request.auth.uid
+        && data.updatedBy == request.auth.uid
+        && getAfter(
+          /databases/$(database)/documents/businesses/$(businessId)/counters/salesNotes
+        ).data.nextNumber
+          == data.folioNumber + 1
+        && getAfter(
+          /databases/$(database)/documents/businesses/$(businessId)/counters/salesNotes
+        ).data.lastNoteId == noteId
+        && getAfter(
+          /databases/$(database)/documents/businesses/$(businessId)/counters/salesNotes
+        ).data.updatedBy == request.auth.uid;
+    }
+
+function isTechnician(businessId) {
+  return isActiveMember(businessId)
+    && get(
+      /databases/$(database)/documents/members/$(request.auth.uid)
+    ).data.role == 'technician';
+}
+
+function validTechnicianAssignment(
+  businessId,
+  technicianId,
+  technicianName
+) {
+  return exists(
+      /databases/$(database)/documents/members/$(technicianId)
+    )
+    && get(
+      /databases/$(database)/documents/members/$(technicianId)
+    ).data.businessId == businessId
+    && get(
+      /databases/$(database)/documents/members/$(technicianId)
+    ).data.active == true
+    && get(
+      /databases/$(database)/documents/members/$(technicianId)
+    ).data.role == 'technician'
+    && (
+      get(
+        /databases/$(database)/documents/members/$(technicianId)
+      ).data.displayName == technicianName
+      || (
+        get(
+          /databases/$(database)/documents/members/$(technicianId)
+        ).data.displayName == ''
+        && get(
+          /databases/$(database)/documents/members/$(technicianId)
+        ).data.email == technicianName
+      )
+    );
+}
+
+function validExtinguisherRelation(
+  businessId,
+  clientId,
+  locationId,
+  extinguisherId
+) {
+  return exists(
+      /databases/$(database)/documents/businesses/$(businessId)/clients/$(clientId)
+    )
+    && exists(
+      /databases/$(database)/documents/businesses/$(businessId)/locations/$(locationId)
+    )
+    && exists(
+      /databases/$(database)/documents/businesses/$(businessId)/extinguishers/$(extinguisherId)
+    )
+    && get(
+      /databases/$(database)/documents/businesses/$(businessId)/locations/$(locationId)
+    ).data.clientId == clientId
+    && get(
+      /databases/$(database)/documents/businesses/$(businessId)/extinguishers/$(extinguisherId)
+    ).data.clientId == clientId
+    && get(
+      /databases/$(database)/documents/businesses/$(businessId)/extinguishers/$(extinguisherId)
+    ).data.locationId == locationId;
+}
+
+function validLocationRelation(
+  businessId,
+  clientId,
+  locationId
+) {
+  return exists(
+      /databases/$(database)/documents/businesses/$(businessId)/clients/$(clientId)
+    )
+    && exists(
+      /databases/$(database)/documents/businesses/$(businessId)/locations/$(locationId)
+    )
+    && get(
+      /databases/$(database)/documents/businesses/$(businessId)/locations/$(locationId)
+    ).data.clientId == clientId;
+}
+
+function validServiceVisitRelation(
+  businessId,
+  clientId,
+  locationId,
+  serviceVisitId
+) {
+  return serviceVisitId == null
+    || (
+      exists(
+        /databases/$(database)/documents/businesses/$(businessId)/serviceVisits/$(serviceVisitId)
+      )
+      && get(
+        /databases/$(database)/documents/businesses/$(businessId)/serviceVisits/$(serviceVisitId)
+      ).data.clientId == clientId
+      && get(
+        /databases/$(database)/documents/businesses/$(businessId)/serviceVisits/$(serviceVisitId)
+      ).data.locationId == locationId
+    );
+}
+
+function technicianUpdatesServiceDates(businessId) {
+  return isTechnician(businessId)
+    && request.resource.data
+      .diff(resource.data)
+      .affectedKeys()
+      .hasOnly([
+        'lastServiceDate',
+        'nextServiceDate',
+        'updatedAt',
+        'updatedBy'
+      ])
+    && request.resource.data.updatedBy == request.auth.uid;
+}
+
+    match /members/{userId} {
+  allow get: if signedIn() && request.auth.uid == userId;
+
+  allow list: if isActiveMember(resource.data.businessId)
+    && resource.data.role == 'technician'
+    && resource.data.active == true;
+
+  allow create, update, delete: if false;
+}
+
+    match /businesses/{businessId} {
+      allow read: if isActiveMember(businessId);
+      allow create, delete: if false;
+      allow update: if isOwner(businessId);
+
+            match /clients/{clientId} {
+        allow read: if isActiveMember(businessId);
+
+        allow create: if (
+          !('schemaVersion' in request.resource.data)
+          && canOperate(businessId)
+          && request.resource.data.active == true
+          && request.resource.data.createdBy
+            == request.auth.uid
+          && request.resource.data.updatedBy
+            == request.auth.uid
+        ) || (
+          isSalesClientDocument(
+            request.resource.data
+          )
+          && canManageSalesData(businessId)
+          && validSalesClientData(
+            businessId,
+            request.resource.data
+          )
+          && request.resource.data.active == true
+          && request.resource.data.createdAt
+            == request.time
+          && request.resource.data.updatedAt
+            == request.time
+          && request.resource.data.createdBy
+            == request.auth.uid
+          && request.resource.data.updatedBy
+            == request.auth.uid
+        );
+
+        allow update: if (
+          !isSalesClientDocument(resource.data)
+          && !('schemaVersion' in request.resource.data)
+          && canOperate(businessId)
+          && request.resource.data.createdAt
+            == resource.data.createdAt
+          && request.resource.data.createdBy
+            == resource.data.createdBy
+          && request.resource.data.updatedBy
+            == request.auth.uid
+        ) || (
+          isSalesClientDocument(resource.data)
+          && isSalesClientDocument(
+            request.resource.data
+          )
+          && canManageSalesData(businessId)
+          && validSalesClientData(
+            businessId,
+            request.resource.data
+          )
+          && request.resource.data.createdAt
+            == resource.data.createdAt
+          && request.resource.data.createdBy
+            == resource.data.createdBy
+          && request.resource.data.updatedAt
+            == request.time
+          && request.resource.data.updatedBy
+            == request.auth.uid
+        );
+
+        allow delete: if false;
+      }
+
+            match /counters/salesNotes {
+        allow read: if isActiveMember(businessId);
+
+        allow create: if canManageSalesData(businessId)
+          && request.resource.data.keys().hasOnly([
+            'nextNumber',
+            'lastNoteId',
+            'updatedAt',
+            'updatedBy'
+          ])
+          && request.resource.data.nextNumber == 9601
+          && request.resource.data.lastNoteId is string
+          && request.resource.data.lastNoteId.size() > 0
+          && request.resource.data.updatedAt
+            == request.time
+          && request.resource.data.updatedBy
+            == request.auth.uid
+          && getAfter(
+            /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(request.resource.data.lastNoteId)
+          ).data.folioNumber == 9600
+          && getAfter(
+            /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(request.resource.data.lastNoteId)
+          ).data.createdBy == request.auth.uid;
+
+        allow update: if canManageSalesData(businessId)
+          && request.resource.data.keys().hasOnly([
+            'nextNumber',
+            'lastNoteId',
+            'updatedAt',
+            'updatedBy'
+          ])
+          && request.resource.data.nextNumber
+            == resource.data.nextNumber + 1
+          && request.resource.data.lastNoteId is string
+          && request.resource.data.lastNoteId
+            != resource.data.lastNoteId
+          && request.resource.data.updatedAt
+            == request.time
+          && request.resource.data.updatedBy
+            == request.auth.uid
+          && getAfter(
+            /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(request.resource.data.lastNoteId)
+          ).data.folioNumber
+            == resource.data.nextNumber
+          && getAfter(
+            /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(request.resource.data.lastNoteId)
+          ).data.createdBy == request.auth.uid;
+
+        allow delete: if false;
+      }
+
+            match /salesNotes/{noteId} {
+        allow read: if isActiveMember(businessId);
+
+        allow create: if canManageSalesData(businessId)
+          && validAutomaticSalesNote(
+            businessId,
+            noteId,
+            request.resource.data
+          );
+
+        allow update, delete: if false;
+
+        match /payments/{paymentId} {
+          allow read: if isActiveMember(businessId);
+
+          allow create: if canManageSalesData(businessId)
+            && request.resource.data.keys().hasOnly([
+              'amountCents',
+              'method',
+              'paidAt',
+              'createdAt',
+              'createdBy',
+              'active'
+            ])
+            && request.resource.data.amountCents is int
+            && request.resource.data.amountCents > 0
+            && request.resource.data.method in [
+              'cash',
+              'transfer',
+              'card'
+            ]
+            && request.resource.data.paidAt
+              == request.time
+            && request.resource.data.createdAt
+              == request.time
+            && request.resource.data.createdBy
+              == request.auth.uid
+            && request.resource.data.active == true
+            && getAfter(
+              /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(noteId)
+            ).data.documentStatus == 'issued';
+
+          allow update, delete: if false;
+        }
+      }
+
+      match /serviceAreas/{serviceAreaId} {
+        allow read: if isActiveMember(businessId);
+
+        allow create: if canManageSalesData(businessId)
+          && serviceAreaId.matches(
+            'manual_[a-z0-9-]+_[a-z0-9-]+'
+          )
+          && request.resource.data.keys().hasOnly([
+            'municipality',
+            'locality',
+            'displayName',
+            'normalizedName',
+            'source',
+            'active',
+            'createdAt',
+            'createdBy'
+          ])
+          && isValidMunicipality(
+            request.resource.data.municipality
+          )
+          && request.resource.data.locality is string
+          && request.resource.data.locality.size() > 0
+          && request.resource.data.locality.size() <= 100
+          && request.resource.data.displayName is string
+          && request.resource.data.displayName.size() > 0
+          && request.resource.data.displayName.size() <= 200
+          && request.resource.data.normalizedName is string
+          && request.resource.data.normalizedName.size() > 0
+          && request.resource.data.normalizedName.size() <= 100
+          && request.resource.data.source == 'manual'
+          && request.resource.data.active == true
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.createdBy
+            == request.auth.uid;
+
+        allow update, delete: if false;
+      }
+
+	match /locations/{locationId} {
+           allow read: if isActiveMember(businessId);
+
+  	   allow create: if canOperate(businessId)
+    	   && request.resource.data.active == true
+  	   && request.resource.data.createdBy == request.auth.uid
+ 	   && request.resource.data.updatedBy == request.auth.uid
+ 	   && exists(
+   	   /databases/$(database)/documents/businesses/$(businessId)/clients/$(request.resource.data.clientId)
+ 	);
+
+ 	  allow update: if canOperate(businessId)
+    	  && request.resource.data.clientId == resource.data.clientId
+   	  && request.resource.data.createdAt == resource.data.createdAt
+  	  && request.resource.data.createdBy == resource.data.createdBy
+  	  && request.resource.data.updatedBy == request.auth.uid;
+
+  	allow delete: if false;
+      }
+	
+	match /maintenances/{maintenanceId} {
+  allow read: if isActiveMember(businessId);
+
+allow create: if (
+    canOperate(businessId)
+    || (
+      isTechnician(businessId)
+      && request.resource.data.technicianId == request.auth.uid
+    )
+  )
+  && validTechnicianAssignment(
+    businessId,
+    request.resource.data.technicianId,
+    request.resource.data.technicianName
+  )
+  && request.resource.data.createdBy == request.auth.uid
+  && request.resource.data.updatedBy == request.auth.uid
+  && validExtinguisherRelation(
+    businessId,
+    request.resource.data.clientId,
+    request.resource.data.locationId,
+    request.resource.data.extinguisherId
+  )
+&& validServiceVisitRelation(
+  businessId,
+  request.resource.data.clientId,
+  request.resource.data.locationId,
+  request.resource.data.serviceVisitId
+);
+
+
+  allow update: if (
+      canOperate(businessId)
+      || (
+        isTechnician(businessId)
+        && resource.data.createdBy == request.auth.uid
+        && resource.data.technicianId == request.auth.uid
+      )
+    )
+    && request.resource.data.clientId == resource.data.clientId
+    && request.resource.data.locationId == resource.data.locationId
+    && request.resource.data.extinguisherId
+      == resource.data.extinguisherId
+    && request.resource.data.technicianId
+      == resource.data.technicianId
+    && request.resource.data.technicianName
+      == resource.data.technicianName
+    && request.resource.data.createdAt == resource.data.createdAt
+    && request.resource.data.createdBy == resource.data.createdBy
+    && request.resource.data.updatedBy == request.auth.uid
+    && validExtinguisherRelation(
+      businessId,
+      resource.data.clientId,
+      resource.data.locationId,
+      resource.data.extinguisherId
+    );
+
+  allow delete: if false;
+}
+
+      match /extinguishers/{extinguisherId} {
+        allow read: if isActiveMember(businessId);
+
+        allow create: if canOperate(businessId)
+          && request.resource.data.active == true
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.updatedBy == request.auth.uid
+          && exists(
+            /databases/$(database)/documents/businesses/$(businessId)/clients/$(request.resource.data.clientId)
+          )
+          && exists(
+            /databases/$(database)/documents/businesses/$(businessId)/locations/$(request.resource.data.locationId)
+          )
+          && get(
+            /databases/$(database)/documents/businesses/$(businessId)/locations/$(request.resource.data.locationId)
+          ).data.clientId == request.resource.data.clientId;
+
+        allow update: if (
+    canOperate(businessId)
+    || technicianUpdatesServiceDates(businessId)
+  )
+  && request.resource.data.clientId == resource.data.clientId
+  && request.resource.data.locationId == resource.data.locationId
+  && request.resource.data.createdAt == resource.data.createdAt
+  && request.resource.data.createdBy == resource.data.createdBy
+  && request.resource.data.updatedBy == request.auth.uid
+  && validExtinguisherRelation(
+    businessId,
+    resource.data.clientId,
+    resource.data.locationId,
+    extinguisherId
+  );
+
+        allow delete: if false;
+      }
+match /serviceVisits/{serviceVisitId} {
+  allow read: if isActiveMember(businessId);
+
+  allow create: if canOperate(businessId)
+    && request.resource.data.status == 'scheduled'
+    && request.resource.data.completedDate == null
+    && request.resource.data.createdBy == request.auth.uid
+    && request.resource.data.updatedBy == request.auth.uid
+    && validLocationRelation(
+      businessId,
+      request.resource.data.clientId,
+      request.resource.data.locationId
+    )
+    && validTechnicianAssignment(
+      businessId,
+      request.resource.data.technicianId,
+      request.resource.data.technicianName
+    );
+
+  allow update: if (
+    canOperate(businessId)
+    && request.resource.data.clientId == resource.data.clientId
+    && request.resource.data.locationId == resource.data.locationId
+    && request.resource.data.createdAt == resource.data.createdAt
+    && request.resource.data.createdBy == resource.data.createdBy
+    && request.resource.data.updatedBy == request.auth.uid
+    && request.resource.data.status in [
+      'scheduled',
+      'in_progress',
+      'completed',
+      'cancelled'
+    ]
+    && (
+      (
+        request.resource.data.status == 'completed'
+        && request.resource.data.completedDate != null
+      )
+      || (
+        request.resource.data.status != 'completed'
+        && request.resource.data.completedDate == null
+      )
+    )
+    && validLocationRelation(
+      businessId,
+      resource.data.clientId,
+      resource.data.locationId
+    )
+    && validTechnicianAssignment(
+      businessId,
+      request.resource.data.technicianId,
+      request.resource.data.technicianName
+    )
+  ) || (
+    isTechnician(businessId)
+    && resource.data.technicianId == request.auth.uid
+    && request.resource.data.clientId == resource.data.clientId
+    && request.resource.data.locationId == resource.data.locationId
+    && request.resource.data.scheduledDate == resource.data.scheduledDate
+    && request.resource.data.technicianId == resource.data.technicianId
+    && request.resource.data.technicianName == resource.data.technicianName
+    && request.resource.data.createdAt == resource.data.createdAt
+    && request.resource.data.createdBy == resource.data.createdBy
+    && request.resource.data.updatedBy == request.auth.uid
+    && request.resource.data
+      .diff(resource.data)
+      .affectedKeys()
+      .hasOnly([
+        'status',
+        'completedDate',
+        'notes',
+        'updatedAt',
+        'updatedBy'
+      ])
+    && (
+      (
+        resource.data.status == 'scheduled'
+        && request.resource.data.status == 'in_progress'
+        && request.resource.data.completedDate == null
+      )
+      || (
+        resource.data.status == 'in_progress'
+        && request.resource.data.status == 'completed'
+        && request.resource.data.completedDate != null
+      )
+    )
+  );
+
+  allow delete: if false;
+}
+
+
+    match /{document=**} {
+        allow read: if isActiveMember(businessId);
+	allow write: if false;
+	}
+    
+
+    }
+  }
+}
