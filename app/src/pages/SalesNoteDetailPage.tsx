@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type FormEvent} from 'react'
 import {
   Link,
   useParams,
@@ -10,6 +10,7 @@ import {
 } from '../constants/sales'
 import {
   getSalesNoteDetail,
+  registerSalesNotePayment,
 } from '../services/salesNoteService'
 import type {
   PaymentMethod,
@@ -17,9 +18,12 @@ import type {
   SalesNoteItem,
 } from '../types/salesNote'
 import {
+  formatCentsForInput,
   formatMoneyFromCents,
+  parseMoneyToCents,
 } from '../utils/money'
 import { getMemberDisplayNames } from '../services/memberService'
+import { canManageSalesNotes } from '../types/member'
 
 const DOCUMENT_STATUS_LABELS = {
   issued: 'Emitida',
@@ -142,7 +146,7 @@ function resolveUserName(
 
 export function SalesNoteDetailPage() {
   const { noteId } = useParams()
-  const { member } = useAuth()
+  const { member, user } = useAuth()
 
   const [note, setNote] =
     useState<SalesNoteDetail | null>(null)
@@ -151,8 +155,31 @@ export function SalesNoteDetailPage() {
 >({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+    const [paymentFormOpen, setPaymentFormOpen] =
+    useState(false)
+
+  const [paymentMethod, setPaymentMethod] =
+    useState<PaymentMethod>('cash')
+
+  const [paymentAmount, setPaymentAmount] =
+    useState('')
+
+  const [
+    pendingPaymentCents,
+    setPendingPaymentCents,
+  ] = useState<number | null>(null)
+
+  const [paymentSubmitting, setPaymentSubmitting] =
+    useState(false)
+
+  const [paymentError, setPaymentError] =
+    useState('')
+
+  const [paymentMessage, setPaymentMessage] =
+    useState('')
 
   useEffect(() => {
+    
     if (!member || !noteId) {
       return
     }
@@ -204,6 +231,118 @@ export function SalesNoteDetailPage() {
     }
   }, [member, noteId])
 
+    function closePaymentForm() {
+    setPaymentFormOpen(false)
+    setPaymentAmount('')
+    setPaymentMethod('cash')
+    setPendingPaymentCents(null)
+    setPaymentError('')
+  }
+
+  function handlePaymentReview(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault()
+    setPaymentError('')
+    setPaymentMessage('')
+
+    if (!note) {
+      return
+    }
+
+    try {
+      const amountCents =
+        parseMoneyToCents(paymentAmount)
+
+      if (amountCents <= 0) {
+        throw new Error(
+          'El pago debe ser mayor que cero.',
+        )
+      }
+
+      if (
+        amountCents >
+        note.amounts.balanceCents
+      ) {
+        throw new Error(
+          `El pago no puede superar el saldo de ${formatMoneyFromCents(
+            note.amounts.balanceCents,
+          )}.`,
+        )
+      }
+
+      setPendingPaymentCents(amountCents)
+    } catch (caughtError) {
+      setPaymentError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'El importe no es válido.',
+      )
+    }
+  }
+
+  async function handleConfirmPayment() {
+    if (
+      !member ||
+      !user ||
+      !noteId ||
+      !pendingPaymentCents
+    ) {
+      return
+    }
+
+    setPaymentSubmitting(true)
+    setPaymentError('')
+    setPaymentMessage('')
+
+    try {
+      await registerSalesNotePayment(
+        member.businessId,
+        noteId,
+        user.uid,
+        {
+          amountCents: pendingPaymentCents,
+          method: paymentMethod,
+        },
+      )
+
+      const updatedNote =
+        await getSalesNoteDetail(
+          member.businessId,
+          noteId,
+        )
+
+      if (!updatedNote) {
+        throw new Error(
+          'La nota ya no está disponible.',
+        )
+      }
+
+      const updatedMemberNames =
+        await getMemberDisplayNames(
+          member.businessId,
+          getRelatedUserIds(updatedNote),
+        )
+
+      setNote(updatedNote)
+      setMemberNames(updatedMemberNames)
+      closePaymentForm()
+
+      setPaymentMessage(
+        'Pago registrado correctamente.',
+      )
+    } catch (caughtError) {
+      setPendingPaymentCents(null)
+
+      setPaymentError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'No fue posible registrar el pago.',
+      )
+    } finally {
+      setPaymentSubmitting(false)
+    }
+  }
   if (!member) {
     return (
       <main>
@@ -470,7 +609,208 @@ export function SalesNoteDetailPage() {
 
           <section>
             <h2>Pagos registrados</h2>
+            <p>
+              Saldo disponible para pagos:{' '}
+              <strong>
+                {formatMoneyFromCents(
+                  note.amounts.balanceCents,
+                )}
+              </strong>
+            </p>
 
+            {paymentMessage && (
+              <p role="status">
+                {paymentMessage}
+              </p>
+            )}
+
+            {paymentError && (
+              <p role="alert">
+                {paymentError}
+              </p>
+            )}
+
+            {note.documentStatus ===
+              'cancelled' && (
+              <p>
+                No se pueden registrar pagos en una
+                nota cancelada.
+              </p>
+            )}
+
+            {note.documentStatus === 'issued' &&
+              note.amounts.balanceCents === 0 && (
+                <p>
+                  Esta nota está completamente pagada.
+                </p>
+              )}
+
+            {user &&
+              canManageSalesNotes(member.role) &&
+              note.documentStatus === 'issued' &&
+              note.amounts.balanceCents > 0 &&
+              !paymentFormOpen && (
+                <p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPaymentFormOpen(true)
+                      setPaymentError('')
+                      setPaymentMessage('')
+                    }}
+                  >
+                    Registrar pago
+                  </button>
+                </p>
+              )}
+
+            {paymentFormOpen &&
+              pendingPaymentCents === null && (
+                <form
+                  onSubmit={handlePaymentReview}
+                >
+                  <fieldset
+                    disabled={paymentSubmitting}
+                  >
+                    <legend>Nuevo pago</legend>
+
+                    <p>
+                      <label>
+                        Método de pago
+                        <select
+                          value={paymentMethod}
+                          onChange={(event) =>
+                            setPaymentMethod(
+                              event.target
+                                .value as PaymentMethod,
+                            )
+                          }
+                        >
+                          <option value="cash">
+                            Efectivo
+                          </option>
+
+                          <option value="transfer">
+                            Transferencia
+                          </option>
+
+                          <option value="card">
+                            Tarjeta
+                          </option>
+                        </select>
+                      </label>
+                    </p>
+
+                    <p>
+                      <label>
+                        Importe
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          min="0.01"
+                          max={
+                            note.amounts
+                              .balanceCents / 100
+                          }
+                          step="0.01"
+                          value={paymentAmount}
+                          onChange={(event) =>
+                            setPaymentAmount(
+                              event.target.value,
+                            )
+                          }
+                          required
+                        />
+                      </label>
+                    </p>
+
+                    <p>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPaymentAmount(
+                            formatCentsForInput(
+                              note.amounts
+                                .balanceCents,
+                            ),
+                          )
+                        }
+                      >
+                        Usar saldo completo
+                      </button>
+                    </p>
+
+                    <p>
+                      <button
+                        type="button"
+                        onClick={closePaymentForm}
+                      >
+                        Cancelar
+                      </button>{' '}
+                      <button type="submit">
+                        Revisar pago
+                      </button>
+                    </p>
+                  </fieldset>
+                </form>
+              )}
+
+            {paymentFormOpen &&
+              pendingPaymentCents !== null && (
+                <div>
+                  <h3>Confirmar pago</h3>
+
+                  <dl>
+                    <dt>Método</dt>
+                    <dd>
+                      {
+                        PAYMENT_METHOD_LABELS[
+                          paymentMethod
+                        ]
+                      }
+                    </dd>
+
+                    <dt>Importe</dt>
+                    <dd>
+                      <strong>
+                        {formatMoneyFromCents(
+                          pendingPaymentCents,
+                        )}
+                      </strong>
+                    </dd>
+
+                    <dt>Saldo después del pago</dt>
+                    <dd>
+                      {formatMoneyFromCents(
+                        note.amounts.balanceCents -
+                          pendingPaymentCents,
+                      )}
+                    </dd>
+                  </dl>
+
+                  <p>
+                    <button
+                      type="button"
+                      disabled={paymentSubmitting}
+                      onClick={() =>
+                        setPendingPaymentCents(null)
+                      }
+                    >
+                      Regresar
+                    </button>{' '}
+
+                    <button
+                      type="button"
+                      disabled={paymentSubmitting}
+                      onClick={handleConfirmPayment}
+                    >
+                      {paymentSubmitting
+                        ? 'Registrando...'
+                        : 'Confirmar pago'}
+                    </button>
+                  </p>
+                </div>
+              )}
             {note.payments.length === 0 ? (
               <p>
                 Esta nota no tiene pagos registrados.

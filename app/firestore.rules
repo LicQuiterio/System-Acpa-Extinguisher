@@ -296,6 +296,71 @@ service cloud.firestore {
         );
     }
 
+        function validPaymentData(data) {
+      return data.keys().hasOnly([
+          'amountCents',
+          'method',
+          'paidAt',
+          'createdAt',
+          'createdBy',
+          'active'
+        ])
+        && data.amountCents is int
+        && data.amountCents > 0
+        && data.method in [
+          'cash',
+          'transfer',
+          'card'
+        ]
+        && data.paidAt == request.time
+        && data.createdAt == request.time
+        && data.createdBy == request.auth.uid
+        && data.active == true;
+    }
+
+    function validAdditionalPaymentUpdate(
+      businessId,
+      noteId,
+      data
+    ) {
+      let paymentId = data.lastPaymentId;
+      let payment = getAfter(
+        /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(noteId)/payments/$(paymentId)
+      ).data;
+
+      return resource.data.documentStatus == 'issued'
+        && data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly([
+            'amounts',
+            'paymentStatus',
+            'lastPaymentId',
+            'updatedAt',
+            'updatedBy'
+          ])
+        && data.amounts.diff(resource.data.amounts)
+          .affectedKeys()
+          .hasOnly([
+            'paidCents',
+            'balanceCents'
+          ])
+        && data.lastPaymentId is string
+        && data.lastPaymentId.size() > 0
+        && validPaymentData(payment)
+        && validSalesNoteAmounts(data.amounts)
+        && validPaymentStatus(data)
+        && data.amounts.paidCents
+          == resource.data.amounts.paidCents
+            + payment.amountCents
+        && data.amounts.balanceCents
+          == resource.data.amounts.balanceCents
+            - payment.amountCents
+        && payment.amountCents
+          <= resource.data.amounts.balanceCents
+        && data.updatedAt == request.time
+        && data.updatedBy == request.auth.uid;
+    }
+
     function validSalesNoteDelivery(data) {
       return data.delivery is map
         && data.delivery.keys().hasOnly([
@@ -356,7 +421,8 @@ service cloud.firestore {
           'createdAt',
           'updatedAt',
           'createdBy',
-          'updatedBy'
+          'updatedBy',
+          'lastPaymentId'
         ])
         && data.folioNumber is int
         && data.folioNumber >= 0
@@ -384,6 +450,7 @@ service cloud.firestore {
         && data.updatedAt == request.time
         && data.createdBy == request.auth.uid
         && data.updatedBy == request.auth.uid
+        && data.lastPaymentId == null
         && getAfter(
           /databases/$(database)/documents/businesses/$(businessId)/counters/salesNotes
         ).data.nextNumber
@@ -655,37 +722,55 @@ function technicianUpdatesServiceDates(businessId) {
             request.resource.data
           );
 
-        allow update, delete: if false;
+                allow update: if canManageSalesData(businessId)
+          && validAdditionalPaymentUpdate(
+            businessId,
+            noteId,
+            request.resource.data
+          );
+
+        allow delete: if false;
 
         match /payments/{paymentId} {
           allow read: if isActiveMember(businessId);
 
-          allow create: if canManageSalesData(businessId)
-            && request.resource.data.keys().hasOnly([
-              'amountCents',
-              'method',
-              'paidAt',
-              'createdAt',
-              'createdBy',
-              'active'
-            ])
-            && request.resource.data.amountCents is int
-            && request.resource.data.amountCents > 0
-            && request.resource.data.method in [
-              'cash',
-              'transfer',
-              'card'
-            ]
-            && request.resource.data.paidAt
-              == request.time
-            && request.resource.data.createdAt
-              == request.time
-            && request.resource.data.createdBy
-              == request.auth.uid
-            && request.resource.data.active == true
+                    allow create: if canManageSalesData(businessId)
+            && validPaymentData(
+              request.resource.data
+            )
             && getAfter(
               /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(noteId)
-            ).data.documentStatus == 'issued';
+            ).data.documentStatus == 'issued'
+            && (
+              (
+                !exists(
+                  /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(noteId)
+                )
+                && request.resource.data.amountCents
+                  <= getAfter(
+                    /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(noteId)
+                  ).data.amounts.paidCents
+              )
+              || (
+                exists(
+                  /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(noteId)
+                )
+                && getAfter(
+                  /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(noteId)
+                ).data.lastPaymentId == paymentId
+                && getAfter(
+                  /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(noteId)
+                ).data.amounts.paidCents
+                  == get(
+                    /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(noteId)
+                  ).data.amounts.paidCents
+                    + request.resource.data.amountCents
+                && request.resource.data.amountCents
+                  <= get(
+                    /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(noteId)
+                  ).data.amounts.balanceCents
+              )
+            );
 
           allow update, delete: if false;
         }

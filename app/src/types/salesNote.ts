@@ -160,6 +160,7 @@ export type SalesNote = {
   updatedAt: Timestamp
   createdBy: string
   updatedBy: string
+  lastPaymentId: string | null
 }
 
 export type Payment = {
@@ -183,6 +184,13 @@ export type SalesNoteDetail = Omit<
 export type PaymentInput = {
   amountCents: number
   method: PaymentMethod
+}
+
+export type RegisterSalesNotePaymentResult = {
+  paymentId: string
+  paidCents: number
+  balanceCents: number
+  paymentStatus: PaymentStatus
 }
 
 export type CreateSalesNoteInput = {

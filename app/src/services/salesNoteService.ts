@@ -23,6 +23,8 @@ import type {
   CreateSalesNoteInput,
   CreateSalesNoteResult,
   Payment,
+  PaymentInput,
+  RegisterSalesNotePaymentResult,
   SalesNoteDetail,
   SalesNoteHistoryDelivery,
   SalesNoteHistoryItem,
@@ -39,6 +41,7 @@ import {
   RESICO_RATE_BASIS_POINTS,
   VAT_RATE_BASIS_POINTS,
 } from '../utils/salesCalculations'
+import { calculateAdditionalPaymentSummary } from '../utils/salesNotePayment'
 
 function normalizeItems(
   items: readonly SalesNoteItem[],
@@ -423,6 +426,7 @@ export async function createSalesNote(
       updatedAt: serverTimestamp(),
       createdBy: userId,
       updatedBy: userId,
+      lastPaymentId: null,
     })
 
     input.payments.forEach(
@@ -445,6 +449,95 @@ export async function createSalesNote(
       noteId: noteReference.id,
       folioNumber,
       folioDisplay,
+    }
+  })
+}
+
+export async function registerSalesNotePayment(
+  businessId: string,
+  noteId: string,
+  userId: string,
+  payment: PaymentInput,
+): Promise<RegisterSalesNotePaymentResult> {
+  if (!businessId.trim()) {
+    throw new Error('El negocio es obligatorio')
+  }
+
+  if (!noteId.trim()) {
+    throw new Error('La nota es obligatoria')
+  }
+
+  if (!userId.trim()) {
+    throw new Error('El usuario es obligatorio')
+  }
+
+  if (
+    !['cash', 'transfer', 'card'].includes(
+      payment.method,
+    )
+  ) {
+    throw new Error(
+      'El método de pago no es válido',
+    )
+  }
+
+  const noteReference = doc(
+    db,
+    'businesses',
+    businessId,
+    'salesNotes',
+    noteId,
+  )
+
+  const paymentReference = doc(
+    collection(noteReference, 'payments'),
+  )
+
+  return runTransaction(db, async (transaction) => {
+    const noteSnapshot =
+      await transaction.get(noteReference)
+
+    if (!noteSnapshot.exists()) {
+      throw new Error('La nota no existe')
+    }
+
+    const note =
+      noteSnapshot.data() as SalesNoteDetailDocument
+
+    if (note.documentStatus !== 'issued') {
+      throw new Error(
+        'No se pueden registrar pagos en una nota cancelada',
+      )
+    }
+
+    const summary =
+      calculateAdditionalPaymentSummary(
+        note.amounts,
+        payment.amountCents,
+      )
+
+    transaction.update(noteReference, {
+      'amounts.paidCents': summary.paidCents,
+      'amounts.balanceCents':
+        summary.balanceCents,
+      paymentStatus: summary.paymentStatus,
+      lastPaymentId: paymentReference.id,
+      updatedAt: serverTimestamp(),
+      updatedBy: userId,
+    })
+
+    transaction.set(paymentReference, {
+      amountCents: payment.amountCents,
+      method: payment.method,
+      paidAt: serverTimestamp(),
+      createdAt: serverTimestamp(),
+      createdBy: userId,
+      active: true,
+    })
+
+    return {
+      paymentId: paymentReference.id,
+      ...summary,
     }
   })
 }
