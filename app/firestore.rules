@@ -296,6 +296,42 @@ service cloud.firestore {
         );
     }
 
+    function validSalesNoteDelivery(data) {
+      return data.delivery is map
+        && data.delivery.keys().hasOnly([
+          'status',
+          'scheduledDate',
+          'deliveredAt',
+          'deliveredBy'
+        ])
+        && (
+          (
+            data.delivery.status == 'pending'
+            && data.delivery.scheduledDate is string
+            && data.delivery.scheduledDate.matches(
+              '[0-9]{4}-[0-9]{2}-[0-9]{2}'
+            )
+            && data.delivery.deliveredAt == null
+            && data.delivery.deliveredBy == null
+          )
+          || (
+            data.delivery.status == 'delivered'
+            && (
+              data.delivery.scheduledDate == null
+              || (
+                data.delivery.scheduledDate is string
+                && data.delivery.scheduledDate.matches(
+                  '[0-9]{4}-[0-9]{2}-[0-9]{2}'
+                )
+              )
+            )
+            && data.delivery.deliveredAt == request.time
+            && data.delivery.deliveredBy
+              == request.auth.uid
+          )
+        );
+    }
+
     function validAutomaticSalesNote(
       businessId,
       noteId,
@@ -314,7 +350,7 @@ service cloud.firestore {
           'terms',
           'documentStatus',
           'paymentStatus',
-          'deliveryStatus',
+          'delivery',
           'notes',
           'cancellation',
           'createdAt',
@@ -340,7 +376,7 @@ service cloud.firestore {
         && validSalesNoteTerms(data.terms)
         && data.documentStatus == 'issued'
         && validPaymentStatus(data)
-        && data.deliveryStatus == 'pending'
+        && validSalesNoteDelivery(data)
         && data.notes is string
         && data.notes.size() <= 2000
         && data.cancellation == null

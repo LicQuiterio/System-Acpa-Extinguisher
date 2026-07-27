@@ -29,6 +29,9 @@ export function DashboardPage() {
       <button type='button' onClick={() => navigate('/sales/new')}>
         Nueva Nota
       </button>
+      <button type="button" onClick={() => navigate('/sales')}>
+        Historial de notas
+      </button>
       <button type="button" onClick={() => navigate('/clients')}>
         Clientes
       </button>

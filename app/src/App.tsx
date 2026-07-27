@@ -6,6 +6,7 @@ import { LoginPage } from './pages/LoginPage'
 import { ClientsPage } from './pages/ClientsPage'
 import { ClientDetailPage } from './pages/ClientDetailPage'
 import { SalesNotePage } from './pages/SalesNotePage'
+import { SalesNotesHistoryPage } from './pages/SalesNoteHistoryPage'
 
 function App() {
   return (
@@ -17,7 +18,7 @@ function App() {
         <Route path="/clients" element={<ClientsPage />} />
         <Route path='/clients/:clientId' element ={<ClientDetailPage/>} />
         <Route path="/sales/new" element={<SalesNotePage />} />
-
+        <Route path='/sales' element={<SalesNotesHistoryPage/>} />
       </Route>
 
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

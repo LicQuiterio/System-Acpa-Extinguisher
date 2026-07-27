@@ -11,6 +11,7 @@ import type {
   CreateSalesNoteResult,
   PaymentInput,
   PaymentMethod,
+  SalesNoteDeliveryInput,
 } from '../types/salesNote'
 import type { SalesNoteItemDraft } from '../types/salesNoteDraft'
 import type { SalesClient } from '../types/client'
@@ -78,6 +79,11 @@ export function SalesNotePage() {
     const [saving, setSaving] = useState(false)
   const [createdNote, setCreatedNote] =
     useState<CreateSalesNoteResult | null>(null)
+    const [delivery, setDelivery] =
+  useState<SalesNoteDeliveryInput>({
+    status: 'pending',
+    scheduledDate: '',
+  })
 
   const formLocked =
     saving || createdNote !== null
@@ -215,6 +221,10 @@ export function SalesNotePage() {
     setError('')
     setMessage('')
     setCreatedNote(null)
+    setDelivery({
+      status: 'pending',
+      scheduledDate: '',
+    })
   }
 
   function clearForm() {
@@ -229,8 +239,10 @@ export function SalesNotePage() {
       payments.length > 0 ||
       applyVat ||
       applyResicoWithholding ||
-      notes.trim() !== ''
-
+      notes.trim() !== '' ||
+      delivery.status !== 'pending' || 
+      delivery.scheduledDate !== ''
+      
     if (
       hasInformation &&
       !window.confirm(
@@ -296,6 +308,7 @@ export function SalesNotePage() {
               ...DEFAULT_SALES_TERMS.clauses,
             ],
           },
+          delivery,
           notes,
         },
       )
@@ -574,6 +587,90 @@ export function SalesNotePage() {
         {summary.hasOverpayment && (
           <p role="alert">
             Los pagos superan el total de la nota.
+          </p>
+        )}
+      </section>
+
+      <section>
+        <h2>Entrega</h2>
+            
+        <label htmlFor="sales-delivery-status">
+          Estado de entrega
+        </label>
+            
+        <select
+          id="sales-delivery-status"
+          value={delivery.status}
+          disabled={formLocked}
+          onChange={(event) => {
+            const status = event.target.value
+          
+            setDelivery(
+              status === 'delivered'
+                ? {
+                    status: 'delivered',
+                    scheduledDate:
+                      delivery.scheduledDate || null,
+                  }
+                : {
+                    status: 'pending',
+                    scheduledDate:
+                      delivery.scheduledDate ?? '',
+                  },
+            )
+          
+            setError('')
+            setMessage('')
+          }}
+        >
+          <option value="pending">
+            Pendiente de entrega
+          </option>
+          <option value="delivered">
+            Entregado
+          </option>
+        </select>
+        
+        <label htmlFor="sales-scheduled-delivery-date">
+          Fecha programada de entrega
+        </label>
+        
+        <input
+          id="sales-scheduled-delivery-date"
+          type="date"
+          value={delivery.scheduledDate ?? ''}
+          required={delivery.status === 'pending'}
+          disabled={formLocked}
+          onChange={(event) => {
+            const scheduledDate = event.target.value
+          
+            setDelivery((currentDelivery) =>
+              currentDelivery.status === 'pending'
+                ? {
+                    status: 'pending',
+                    scheduledDate,
+                  }
+                : {
+                    status: 'delivered',
+                    scheduledDate:
+                      scheduledDate || null,
+                  },
+            )
+          
+            setError('')
+            setMessage('')
+          }}
+        />
+      
+        {delivery.status === 'pending' ? (
+          <p>
+            Esta fecha indica cuándo ACPA se compromete
+            a entregar el pedido.
+          </p>
+        ) : (
+          <p>
+            Al guardar, se registrará automáticamente
+            quién realizó la entrega y la fecha real.
           </p>
         )}
       </section>

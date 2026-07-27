@@ -1,11 +1,18 @@
 import {
   collection,
   doc,
+  getDocs,
+  orderBy,
+  query,
   runTransaction,
   serverTimestamp,
+  type Timestamp,
 } from 'firebase/firestore'
 import { INITIAL_SALES_FOLIO } from '../constants/salesSettings'
 import { db } from '../lib/firebase'
+import {
+  normalizeDeliveryInput,
+} from '../utils/salesNoteDelivery'
 import {
   isSalesClient,
   type Client,
@@ -14,6 +21,8 @@ import {
 import type {
   CreateSalesNoteInput,
   CreateSalesNoteResult,
+  SalesNoteHistoryDelivery,
+  SalesNoteHistoryItem,
   SalesNoteItem,
   SalesNoteTerms,
 } from '../types/salesNote'
@@ -126,6 +135,63 @@ function normalizeTerms(
   }
 }
 
+type LegacySalesNote = {
+  deliveryStatus?: 'pending' | 'delivered'
+}
+
+type SalesNoteHistoryDocument = {
+  folioNumber: number
+  folioDisplay: string
+  issuedAt: Timestamp
+
+  clientId: string
+  customerSnapshot: SalesNoteHistoryItem['customerSnapshot']
+
+  amounts: SalesNoteHistoryItem['amounts']
+
+  documentStatus: SalesNoteHistoryItem['documentStatus']
+  paymentStatus: SalesNoteHistoryItem['paymentStatus']
+
+  delivery?: {
+    status: 'pending' | 'delivered'
+    scheduledDate: string | null
+    deliveredAt: Timestamp | null
+    deliveredBy: string | null
+  }
+} & LegacySalesNote
+
+type SalesNoteDeliverySource = {
+  delivery?: {
+    status: 'pending' | 'delivered'
+    scheduledDate: string | null
+    deliveredAt: Timestamp | null
+    deliveredBy: string | null
+  }
+  deliveryStatus?: 'pending' | 'delivered'
+}
+
+export function resolveHistoryDelivery(
+  note: SalesNoteDeliverySource,
+): SalesNoteHistoryDelivery {
+  if (note.delivery) {
+    return {
+      ...note.delivery,
+      isLegacy: false,
+    }
+  }
+
+  return {
+    status:
+      note.deliveryStatus === 'delivered'
+        ? 'delivered'
+        : 'pending',
+    scheduledDate: null,
+    deliveredAt: null,
+    deliveredBy: null,
+    isLegacy: true,
+  }
+}
+
 export async function createSalesNote(
   businessId: string,
   userId: string,
@@ -151,6 +217,10 @@ export async function createSalesNote(
 
   const items = normalizeItems(input.items)
   const terms = normalizeTerms(input.terms)
+
+  const delivery = normalizeDeliveryInput(
+  input.delivery,
+)
 
   const subtotalCents = calculateSubtotal(items)
 
@@ -320,7 +390,22 @@ export async function createSalesNote(
       documentStatus: 'issued',
       paymentStatus:
         paymentSummary.paymentStatus,
-      deliveryStatus: 'pending',
+      delivery:
+  delivery.status === 'delivered'
+    ? {
+        status: 'delivered',
+        scheduledDate:
+          delivery.scheduledDate || null,
+        deliveredAt: serverTimestamp(),
+        deliveredBy: userId,
+      }
+    : {
+        status: 'pending',
+        scheduledDate:
+          delivery.scheduledDate,
+        deliveredAt: null,
+        deliveredBy: null,
+      },
 
       notes: input.notes.trim(),
       cancellation: null,
@@ -354,3 +439,46 @@ export async function createSalesNote(
     }
   })
 }
+
+export async function getSalesNotesHistory(
+  businessId: string,
+): Promise<SalesNoteHistoryItem[]> {
+  if (!businessId.trim()) {
+    throw new Error('El negocio es obligatorio')
+  }
+
+  const notesQuery = query(
+    collection(
+      db,
+      'businesses',
+      businessId,
+      'salesNotes',
+    ),
+    orderBy('issuedAt', 'desc'),
+  )
+
+  const snapshot = await getDocs(notesQuery)
+
+  return snapshot.docs.map((noteDocument) => {
+    const note =
+      noteDocument.data() as SalesNoteHistoryDocument
+
+    return {
+      id: noteDocument.id,
+
+      folioNumber: note.folioNumber,
+      folioDisplay: note.folioDisplay,
+      issuedAt: note.issuedAt,
+
+      clientId: note.clientId,
+      customerSnapshot: note.customerSnapshot,
+
+      amounts: note.amounts,
+
+      documentStatus: note.documentStatus,
+      paymentStatus: note.paymentStatus,
+      delivery: resolveHistoryDelivery(note),
+    }
+  })
+}
+

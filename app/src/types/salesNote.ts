@@ -12,7 +12,54 @@ export type DocumentStatus = 'issued' | 'cancelled'
 
 export type PaymentStatus = 'unpaid' | 'partial' | 'paid'
 
-export type DeliveryStatus = 'pending' | 'delivered'
+export type SalesNoteDelivery =
+  | {
+      status: 'pending'
+      scheduledDate: string
+      deliveredAt: null
+      deliveredBy: null
+    }
+  | {
+      status: 'delivered'
+      scheduledDate: string | null
+      deliveredAt: Timestamp
+      deliveredBy: string
+    }
+
+export type SalesNoteDeliveryInput =
+  | {
+      status: 'pending'
+      scheduledDate: string
+    }
+  | {
+      status: 'delivered'
+      scheduledDate: string | null
+    }
+
+export type SalesNoteHistoryDelivery = {
+  status: 'pending' | 'delivered'
+  scheduledDate: string | null
+  deliveredAt: Timestamp | null
+  deliveredBy: string | null
+  isLegacy: boolean
+}
+
+export type SalesNoteHistoryItem = {
+  id: string
+
+  folioNumber: number
+  folioDisplay: string
+  issuedAt: Timestamp
+
+  clientId: string
+  customerSnapshot: CustomerSnapshot
+
+  amounts: SalesNoteAmounts
+
+  documentStatus: DocumentStatus
+  paymentStatus: PaymentStatus
+  delivery: SalesNoteHistoryDelivery
+}
 
 export type PaymentMethod = 'cash' | 'transfer' | 'card'
 
@@ -104,7 +151,7 @@ export type SalesNote = {
 
   documentStatus: DocumentStatus
   paymentStatus: PaymentStatus
-  deliveryStatus: DeliveryStatus
+  delivery: SalesNoteDelivery
 
   notes: string
   cancellation: SalesNoteCancellation | null
@@ -139,6 +186,7 @@ export type CreateSalesNoteInput = {
 
   payments: PaymentInput[]
   terms: SalesNoteTerms
+  delivery: SalesNoteDeliveryInput
   notes: string
 }
 
