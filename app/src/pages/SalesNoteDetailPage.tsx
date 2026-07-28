@@ -11,6 +11,8 @@ import {
 import {
   getSalesNoteDetail,
   registerSalesNotePayment,
+  markSalesNoteDelivered,
+  cancelSalesNote,
 } from '../services/salesNoteService'
 import type {
   PaymentMethod,
@@ -163,6 +165,14 @@ export function SalesNoteDetailPage() {
 
   const [paymentAmount, setPaymentAmount] =
     useState('')
+    const [deliverySubmitting, setDeliverySubmitting] =
+  useState(false)
+
+const [deliveryError, setDeliveryError] =
+  useState('')
+
+const [deliveryMessage, setDeliveryMessage] =
+  useState('')
 
   const [
     pendingPaymentCents,
@@ -177,6 +187,25 @@ export function SalesNoteDetailPage() {
 
   const [paymentMessage, setPaymentMessage] =
     useState('')
+
+    const [
+  cancellationFormOpen,
+  setCancellationFormOpen,
+] = useState(false)
+
+const [cancellationReason, setCancellationReason] =
+  useState('')
+
+const [
+  cancellationSubmitting,
+  setCancellationSubmitting,
+] = useState(false)
+
+const [cancellationError, setCancellationError] =
+  useState('')
+
+const [cancellationMessage, setCancellationMessage] =
+  useState('')
 
   useEffect(() => {
     
@@ -343,6 +372,139 @@ export function SalesNoteDetailPage() {
       setPaymentSubmitting(false)
     }
   }
+
+  async function handleMarkDelivered() {
+  if (!member || !user || !noteId || !note) {
+    return
+  }
+
+  const confirmed = window.confirm(
+    `¿Confirmas que la nota ${note.folioDisplay} ya fue entregada? Esta acción no se puede revertir.`,
+  )
+
+  if (!confirmed) {
+    return
+  }
+
+  setDeliverySubmitting(true)
+  setDeliveryError('')
+  setDeliveryMessage('')
+
+  try {
+    await markSalesNoteDelivered(
+      member.businessId,
+      noteId,
+      user.uid,
+    )
+
+    const updatedNote =
+      await getSalesNoteDetail(
+        member.businessId,
+        noteId,
+      )
+
+    if (!updatedNote) {
+      throw new Error(
+        'La nota ya no está disponible.',
+      )
+    }
+
+    const updatedMemberNames =
+      await getMemberDisplayNames(
+        member.businessId,
+        getRelatedUserIds(updatedNote),
+      )
+
+    setNote(updatedNote)
+    setMemberNames(updatedMemberNames)
+    setDeliveryMessage(
+      'Entrega registrada correctamente.',
+    )
+  } catch (caughtError) {
+    setDeliveryError(
+      caughtError instanceof Error
+        ? caughtError.message
+        : 'No fue posible registrar la entrega.',
+    )
+  } finally {
+    setDeliverySubmitting(false)
+  }
+}
+async function handleCancelSalesNote(
+  event: FormEvent<HTMLFormElement>,
+) {
+  event.preventDefault()
+
+  if (!member || !user || !noteId || !note) {
+    return
+  }
+
+  const reason = cancellationReason.trim()
+
+  if (reason.length < 10) {
+    setCancellationError(
+      'Explica el motivo con al menos 10 caracteres.',
+    )
+    return
+  }
+
+  const confirmed = window.confirm(
+    `¿Confirmas la cancelación de la nota ${note.folioDisplay}? Esta acción no se puede revertir.`,
+  )
+
+  if (!confirmed) {
+    return
+  }
+
+  setCancellationSubmitting(true)
+  setCancellationError('')
+  setCancellationMessage('')
+
+  try {
+    await cancelSalesNote(
+      member.businessId,
+      noteId,
+      user.uid,
+      reason,
+    )
+
+    const updatedNote =
+      await getSalesNoteDetail(
+        member.businessId,
+        noteId,
+      )
+
+    if (!updatedNote) {
+      throw new Error(
+        'La nota ya no está disponible.',
+      )
+    }
+
+    const updatedMemberNames =
+      await getMemberDisplayNames(
+        member.businessId,
+        getRelatedUserIds(updatedNote),
+      )
+
+    setNote(updatedNote)
+    setMemberNames(updatedMemberNames)
+    setCancellationFormOpen(false)
+    setCancellationReason('')
+    setCancellationMessage(
+      'Nota cancelada correctamente.',
+    )
+  } catch (caughtError) {
+    setCancellationError(
+      caughtError instanceof Error
+        ? caughtError.message
+        : 'No fue posible cancelar la nota.',
+    )
+  } finally {
+    setCancellationSubmitting(false)
+  }
+}
+
+
   if (!member) {
     return (
       <main>
@@ -430,6 +592,100 @@ export function SalesNoteDetailPage() {
                 </>
               )}
             </dl>
+            {cancellationMessage && (
+  <p role="status">{cancellationMessage}</p>
+)}
+
+{cancellationError && (
+  <p role="alert">{cancellationError}</p>
+)}
+
+{member.role === 'owner' &&
+  note.documentStatus === 'issued' &&
+  note.amounts.paidCents === 0 &&
+  note.delivery.status === 'pending' &&
+  !cancellationFormOpen && (
+    <p>
+      <button
+        type="button"
+        onClick={() => {
+          setCancellationFormOpen(true)
+          setCancellationError('')
+          setCancellationMessage('')
+        }}
+      >
+        Cancelar nota
+      </button>
+    </p>
+  )}
+
+{member.role === 'owner' &&
+  note.documentStatus === 'issued' &&
+  note.amounts.paidCents > 0 && (
+    <p>
+      Esta nota tiene pagos registrados y no puede
+      cancelarse.
+    </p>
+  )}
+
+{member.role === 'owner' &&
+  note.documentStatus === 'issued' &&
+  note.delivery.status === 'delivered' && (
+    <p>
+      Esta nota ya fue entregada y no puede
+      cancelarse.
+    </p>
+  )}
+
+        {cancellationFormOpen && (
+          <form onSubmit={handleCancelSalesNote}>
+            <fieldset disabled={cancellationSubmitting}>
+              <legend>Cancelar nota</legend>
+        
+              <p>
+                La cancelación conservará el folio y todos
+                los datos de la nota.
+              </p>
+        
+              <p>
+                <label>
+                  Motivo de cancelación
+                  <textarea
+                    required
+                    minLength={10}
+                    maxLength={500}
+                    rows={4}
+                    value={cancellationReason}
+                    onChange={(event) =>
+                      setCancellationReason(
+                        event.target.value,
+                      )
+                    }
+                  />
+                </label>
+              </p>
+                
+              <p>
+                <button type="submit">
+                  {cancellationSubmitting
+                    ? 'Cancelando...'
+                    : 'Confirmar cancelación'}
+                </button>{' '}
+                <button
+                  type="button"
+                  disabled={cancellationSubmitting}
+                  onClick={() => {
+                    setCancellationFormOpen(false)
+                    setCancellationReason('')
+                    setCancellationError('')
+                  }}
+                >
+                  Cerrar
+                </button>
+              </p>
+            </fieldset>
+          </form>
+        )}
           </section>
 
           <section>
@@ -910,6 +1166,38 @@ export function SalesNoteDetailPage() {
                 </>
               )}
             </dl>
+                        {deliveryMessage && (
+              <p role="status">{deliveryMessage}</p>
+            )}
+
+            {deliveryError && (
+              <p role="alert">{deliveryError}</p>
+            )}
+
+            {user &&
+              canManageSalesNotes(member.role) &&
+              note.documentStatus === 'issued' &&
+              note.delivery.status === 'pending' && (
+                <p>
+                  <button
+                    type="button"
+                    disabled={deliverySubmitting}
+                    onClick={handleMarkDelivered}
+                  >
+                    {deliverySubmitting
+                      ? 'Registrando entrega...'
+                      : 'Marcar como entregada'}
+                  </button>
+                </p>
+              )}
+
+            {note.documentStatus === 'cancelled' &&
+              note.delivery.status === 'pending' && (
+                <p>
+                  No se puede registrar la entrega de una nota
+                  cancelada.
+                </p>
+              )}
 
             {note.delivery.isLegacy && (
               <p>

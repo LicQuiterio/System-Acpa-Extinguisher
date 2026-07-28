@@ -13,6 +13,7 @@ import { INITIAL_SALES_FOLIO } from '../constants/salesSettings'
 import { db } from '../lib/firebase'
 import {
   normalizeDeliveryInput,
+  prepareDeliveryCompletion,
 } from '../utils/salesNoteDelivery'
 import {
   isSalesClient,
@@ -42,6 +43,9 @@ import {
   VAT_RATE_BASIS_POINTS,
 } from '../utils/salesCalculations'
 import { calculateAdditionalPaymentSummary } from '../utils/salesNotePayment'
+import {
+  normalizeSalesNoteCancellationReason,
+} from '../utils/salesNoteCancellation'
 
 function normalizeItems(
   items: readonly SalesNoteItem[],
@@ -539,6 +543,138 @@ export async function registerSalesNotePayment(
       paymentId: paymentReference.id,
       ...summary,
     }
+  })
+}
+
+export async function markSalesNoteDelivered(
+  businessId: string,
+  noteId: string,
+  userId: string,
+): Promise<void> {
+  if (!businessId.trim()) {
+    throw new Error('El negocio es obligatorio')
+  }
+
+  if (!noteId.trim()) {
+    throw new Error('La nota es obligatoria')
+  }
+
+  if (!userId.trim()) {
+    throw new Error('El usuario es obligatorio')
+  }
+
+  const noteReference = doc(
+    db,
+    'businesses',
+    businessId,
+    'salesNotes',
+    noteId,
+  )
+
+  await runTransaction(db, async (transaction) => {
+    const noteSnapshot =
+      await transaction.get(noteReference)
+
+    if (!noteSnapshot.exists()) {
+      throw new Error('La nota no existe')
+    }
+
+    const note =
+      noteSnapshot.data() as SalesNoteDetailDocument
+
+    if (note.documentStatus !== 'issued') {
+      throw new Error(
+        'No se puede entregar una nota cancelada',
+      )
+    }
+
+    const delivery = prepareDeliveryCompletion(
+      resolveHistoryDelivery(note),
+    )
+
+    transaction.update(noteReference, {
+      delivery: {
+        status: 'delivered',
+        scheduledDate: delivery.scheduledDate,
+        deliveredAt: serverTimestamp(),
+        deliveredBy: userId,
+      },
+      updatedAt: serverTimestamp(),
+      updatedBy: userId,
+    })
+  })
+}
+
+export async function cancelSalesNote(
+  businessId: string,
+  noteId: string,
+  userId: string,
+  reason: string,
+): Promise<void> {
+  if (!businessId.trim()) {
+    throw new Error('El negocio es obligatorio')
+  }
+
+  if (!noteId.trim()) {
+    throw new Error('La nota es obligatoria')
+  }
+
+  if (!userId.trim()) {
+    throw new Error('El usuario es obligatorio')
+  }
+
+  const normalizedReason =
+    normalizeSalesNoteCancellationReason(reason)
+
+  const noteReference = doc(
+    db,
+    'businesses',
+    businessId,
+    'salesNotes',
+    noteId,
+  )
+
+  await runTransaction(db, async (transaction) => {
+    const noteSnapshot =
+      await transaction.get(noteReference)
+
+    if (!noteSnapshot.exists()) {
+      throw new Error('La nota no existe')
+    }
+
+    const note =
+      noteSnapshot.data() as SalesNoteDetailDocument
+
+    if (note.documentStatus !== 'issued') {
+      throw new Error(
+        'La nota ya fue cancelada',
+      )
+    }
+
+    if (note.amounts.paidCents > 0) {
+      throw new Error(
+        'No se puede cancelar una nota con pagos registrados',
+      )
+    }
+
+    const delivery = resolveHistoryDelivery(note)
+
+    if (delivery.status === 'delivered') {
+      throw new Error(
+        'No se puede cancelar una nota que ya fue entregada',
+      )
+    }
+
+    transaction.update(noteReference, {
+      documentStatus: 'cancelled',
+      cancellation: {
+        reason: normalizedReason,
+        cancelledAt: serverTimestamp(),
+        cancelledBy: userId,
+      },
+      updatedAt: serverTimestamp(),
+      updatedBy: userId,
+    })
   })
 }
 

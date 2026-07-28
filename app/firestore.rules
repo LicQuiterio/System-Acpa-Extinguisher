@@ -361,6 +361,99 @@ service cloud.firestore {
         && data.updatedBy == request.auth.uid;
     }
 
+    function validDeliveryCompletion(data) {
+  let hadCurrentDelivery =
+    resource.data.keys().hasAny(['delivery']);
+
+  let wasPending =
+    (
+      hadCurrentDelivery
+      && resource.data.delivery.status == 'pending'
+    )
+    || (
+      !hadCurrentDelivery
+      && (
+        !resource.data.keys().hasAny([
+          'deliveryStatus'
+        ])
+        || resource.data.deliveryStatus == 'pending'
+      )
+    );
+
+  return resource.data.documentStatus == 'issued'
+    && wasPending
+    && data.diff(resource.data)
+      .affectedKeys()
+      .hasOnly([
+        'delivery',
+        'updatedAt',
+        'updatedBy'
+      ])
+    && validSalesNoteDelivery(data)
+    && data.delivery.status == 'delivered'
+    && (
+      (
+        hadCurrentDelivery
+        && data.delivery.scheduledDate
+          == resource.data.delivery.scheduledDate
+      )
+      || (
+        !hadCurrentDelivery
+        && data.delivery.scheduledDate == null
+      )
+    )
+    && data.updatedAt == request.time
+    && data.updatedBy == request.auth.uid;
+}
+
+function validSalesNoteCancellation(data) {
+  let hadCurrentDelivery =
+    resource.data.keys().hasAny(['delivery']);
+
+  let deliveryWasPending =
+    (
+      hadCurrentDelivery
+      && resource.data.delivery.status == 'pending'
+    )
+    || (
+      !hadCurrentDelivery
+      && (
+        !resource.data.keys().hasAny([
+          'deliveryStatus'
+        ])
+        || resource.data.deliveryStatus == 'pending'
+      )
+    );
+
+  return resource.data.documentStatus == 'issued'
+    && resource.data.amounts.paidCents == 0
+    && deliveryWasPending
+    && data.diff(resource.data)
+      .affectedKeys()
+      .hasOnly([
+        'documentStatus',
+        'cancellation',
+        'updatedAt',
+        'updatedBy'
+      ])
+    && data.documentStatus == 'cancelled'
+    && data.cancellation is map
+    && data.cancellation.keys().hasOnly([
+      'reason',
+      'cancelledAt',
+      'cancelledBy'
+    ])
+    && data.cancellation.reason is string
+    && data.cancellation.reason.size() >= 10
+    && data.cancellation.reason.size() <= 500
+    && data.cancellation.cancelledAt
+      == request.time
+    && data.cancellation.cancelledBy
+      == request.auth.uid
+    && data.updatedAt == request.time
+    && data.updatedBy == request.auth.uid;
+}
+
     function validSalesNoteDelivery(data) {
       return data.delivery is map
         && data.delivery.keys().hasOnly([
@@ -722,12 +815,25 @@ function technicianUpdatesServiceDates(businessId) {
             request.resource.data
           );
 
-                allow update: if canManageSalesData(businessId)
-          && validAdditionalPaymentUpdate(
-            businessId,
-            noteId,
-            request.resource.data
-          );
+            allow update: if (
+    canManageSalesData(businessId)
+    && (
+      validAdditionalPaymentUpdate(
+        businessId,
+        noteId,
+        request.resource.data
+      )
+      || validDeliveryCompletion(
+        request.resource.data
+      )
+    )
+  )
+  || (
+    isOwner(businessId)
+    && validSalesNoteCancellation(
+      request.resource.data
+    )
+  );
 
         allow delete: if false;
 

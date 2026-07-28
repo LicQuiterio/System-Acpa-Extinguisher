@@ -1,5 +1,6 @@
 import type {
   SalesNoteDeliveryInput,
+  SalesNoteHistoryDelivery,
 } from '../types/salesNote'
 
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
@@ -60,5 +61,19 @@ export function normalizeDeliveryInput(
   return {
     status: 'delivered',
     scheduledDate,
+  }
+}
+export function prepareDeliveryCompletion(
+  delivery: SalesNoteHistoryDelivery,
+): SalesNoteDeliveryInput {
+  if (delivery.status === 'delivered') {
+    throw new Error(
+      'La nota ya fue marcada como entregada',
+    )
+  }
+
+  return {
+    status: 'delivered',
+    scheduledDate: delivery.scheduledDate,
   }
 }

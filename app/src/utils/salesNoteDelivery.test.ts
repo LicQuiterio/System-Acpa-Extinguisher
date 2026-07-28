@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   isValidScheduledDate,
   normalizeDeliveryInput,
+  prepareDeliveryCompletion,
 } from './salesNoteDelivery'
 
 describe('isValidScheduledDate', () => {
@@ -46,5 +47,50 @@ describe('normalizeDeliveryInput', () => {
       status: 'delivered',
       scheduledDate: null,
     })
+  })
+})
+describe('prepareDeliveryCompletion', () => {
+  it('conserva la fecha programada', () => {
+    expect(
+      prepareDeliveryCompletion({
+        status: 'pending',
+        scheduledDate: '2026-07-30',
+        deliveredAt: null,
+        deliveredBy: null,
+        isLegacy: false,
+      }),
+    ).toEqual({
+      status: 'delivered',
+      scheduledDate: '2026-07-30',
+    })
+  })
+
+  it('permite completar una nota antigua pendiente', () => {
+    expect(
+      prepareDeliveryCompletion({
+        status: 'pending',
+        scheduledDate: null,
+        deliveredAt: null,
+        deliveredBy: null,
+        isLegacy: true,
+      }),
+    ).toEqual({
+      status: 'delivered',
+      scheduledDate: null,
+    })
+  })
+
+  it('rechaza una entrega ya completada', () => {
+    expect(() =>
+      prepareDeliveryCompletion({
+        status: 'delivered',
+        scheduledDate: null,
+        deliveredAt: null,
+        deliveredBy: null,
+        isLegacy: true,
+      }),
+    ).toThrow(
+      'La nota ya fue marcada como entregada',
+    )
   })
 })
