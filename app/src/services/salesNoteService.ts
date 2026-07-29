@@ -31,6 +31,7 @@ import type {
   SalesNoteHistoryItem,
   SalesNoteItem,
   SalesNoteTerms,
+  SalesNoteDeliveryScheduleChange,
 } from '../types/salesNote'
 import {
   calculateLineSubtotal,
@@ -46,6 +47,9 @@ import { calculateAdditionalPaymentSummary } from '../utils/salesNotePayment'
 import {
   normalizeSalesNoteCancellationReason,
 } from '../utils/salesNoteCancellation'
+import {
+  normalizeSalesNoteReschedulingReason,
+} from '../utils/salesNoteRescheduling'
 
 function normalizeItems(
   items: readonly SalesNoteItem[],
@@ -476,6 +480,7 @@ export async function createSalesNote(
       createdBy: userId,
       updatedBy: userId,
       lastPaymentId: null,
+      lastDeliveryScheduleChangeId: null,
     })
 
     input.payments.forEach(
@@ -650,6 +655,113 @@ export async function markSalesNoteDelivered(
   })
 }
 
+export async function rescheduleSalesNoteDelivery(
+  businessId: string,
+  noteId: string,
+  userId: string,
+  newScheduledDate: string,
+  reason: string,
+): Promise<void> {
+  if (!businessId.trim()) {
+    throw new Error('El negocio es obligatorio')
+  }
+
+  if (!noteId.trim()) {
+    throw new Error('La nota es obligatoria')
+  }
+
+  if (!userId.trim()) {
+    throw new Error('El usuario es obligatorio')
+  }
+
+  const normalizedDelivery =
+    normalizeDeliveryInput({
+      status: 'pending',
+      scheduledDate: newScheduledDate,
+    })
+
+  const normalizedReason =
+    normalizeSalesNoteReschedulingReason(reason)
+
+  const noteReference = doc(
+    db,
+    'businesses',
+    businessId,
+    'salesNotes',
+    noteId,
+  )
+
+  const scheduleChangeReference = doc(
+    collection(
+      noteReference,
+      'deliveryScheduleChanges',
+    ),
+  )
+
+  await runTransaction(
+    db,
+    async (transaction) => {
+      const noteSnapshot =
+        await transaction.get(noteReference)
+
+      if (!noteSnapshot.exists()) {
+        throw new Error('La nota no existe')
+      }
+
+      const note =
+        noteSnapshot.data() as SalesNoteDetailDocument
+
+      if (note.documentStatus !== 'issued') {
+        throw new Error(
+          'No se puede reprogramar una nota cancelada',
+        )
+      }
+
+      const currentDelivery =
+        resolveHistoryDelivery(note)
+
+      if (currentDelivery.status !== 'pending') {
+        throw new Error(
+          'No se puede reprogramar una nota entregada',
+        )
+      }
+
+      if (
+        currentDelivery.scheduledDate ===
+        normalizedDelivery.scheduledDate
+      ) {
+        throw new Error(
+          'La nueva fecha debe ser diferente de la fecha actual',
+        )
+      }
+
+      transaction.update(noteReference, {
+        delivery: {
+          status: 'pending',
+          scheduledDate:
+            normalizedDelivery.scheduledDate,
+          deliveredAt: null,
+          deliveredBy: null,
+        },
+        lastDeliveryScheduleChangeId:
+          scheduleChangeReference.id,
+        updatedAt: serverTimestamp(),
+        updatedBy: userId,
+      })
+
+      transaction.set(scheduleChangeReference, {
+        previousScheduledDate:
+          currentDelivery.scheduledDate,
+        newScheduledDate:
+          normalizedDelivery.scheduledDate,
+        reason: normalizedReason,
+        changedAt: serverTimestamp(),
+        changedBy: userId,
+      })
+    },
+  )
+}
+
 export async function cancelSalesNote(
   businessId: string,
   noteId: string,
@@ -796,8 +908,21 @@ export async function getSalesNoteDetail(
     orderBy('paidAt', 'asc'),
   )
 
-  const paymentsSnapshot =
-    await getDocs(paymentsQuery)
+  const deliveryScheduleChangesQuery = query(
+    collection(
+      noteReference,
+      'deliveryScheduleChanges',
+    ),
+    orderBy('changedAt', 'desc'),
+  )
+
+  const [
+    paymentsSnapshot,
+    deliveryScheduleChangesSnapshot,
+  ] = await Promise.all([
+    getDocs(paymentsQuery),
+    getDocs(deliveryScheduleChangesQuery),
+  ])
 
   const note =
     noteSnapshot.data() as SalesNoteDetailDocument
@@ -810,11 +935,21 @@ export async function getSalesNoteDetail(
       }) as Payment,
   )
 
+  const deliveryScheduleChanges =
+    deliveryScheduleChangesSnapshot.docs.map(
+      (changeDocument) =>
+        ({
+          id: changeDocument.id,
+          ...changeDocument.data(),
+        }) as SalesNoteDeliveryScheduleChange,
+    )
+
   return {
     id: noteSnapshot.id,
     ...note,
     delivery: resolveHistoryDelivery(note),
     payments,
+    deliveryScheduleChanges,
   }
 }
 

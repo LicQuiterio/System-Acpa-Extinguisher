@@ -13,6 +13,7 @@ import {
   registerSalesNotePayment,
   markSalesNoteDelivered,
   cancelSalesNote,
+  rescheduleSalesNoteDelivery,
 } from '../services/salesNoteService'
 import type {
   PaymentMethod,
@@ -25,7 +26,10 @@ import {
   parseMoneyToCents,
 } from '../utils/money'
 import { getMemberDisplayNames } from '../services/memberService'
-import { canManageSalesNotes } from '../types/member'
+import {
+  canManageSalesNotes,
+  canRescheduleSalesNoteDelivery,
+} from '../types/member'
 
 const DOCUMENT_STATUS_LABELS = {
   issued: 'Emitida',
@@ -126,6 +130,9 @@ function getRelatedUserIds(
     note.updatedBy,
     note.delivery.deliveredBy,
     note.cancellation?.cancelledBy,
+    ...note.deliveryScheduleChanges.map(
+      (change) => change.changedBy,
+    ),
     ...note.payments.map(
       (payment) => payment.createdBy,
     ),
@@ -173,6 +180,35 @@ const [deliveryError, setDeliveryError] =
 
 const [deliveryMessage, setDeliveryMessage] =
   useState('')
+  const [
+  reschedulingFormOpen,
+  setReschedulingFormOpen,
+] = useState(false)
+
+const [
+  newScheduledDate,
+  setNewScheduledDate,
+] = useState('')
+
+const [
+  reschedulingReason,
+  setReschedulingReason,
+] = useState('')
+
+const [
+  reschedulingSubmitting,
+  setReschedulingSubmitting,
+] = useState(false)
+
+const [
+  reschedulingError,
+  setReschedulingError,
+] = useState('')
+
+const [
+  reschedulingMessage,
+  setReschedulingMessage,
+] = useState('')
 
   const [
     pendingPaymentCents,
@@ -372,6 +408,65 @@ const [cancellationMessage, setCancellationMessage] =
       setPaymentSubmitting(false)
     }
   }
+
+  async function handleRescheduleDelivery(
+  event: FormEvent<HTMLFormElement>,
+) {
+  event.preventDefault()
+
+  if (!member || !user || !noteId || !note) {
+    return
+  }
+
+  setReschedulingSubmitting(true)
+  setReschedulingError('')
+  setReschedulingMessage('')
+
+  try {
+    await rescheduleSalesNoteDelivery(
+      member.businessId,
+      noteId,
+      user.uid,
+      newScheduledDate,
+      reschedulingReason,
+    )
+
+    const updatedNote =
+      await getSalesNoteDetail(
+        member.businessId,
+        noteId,
+      )
+
+    if (!updatedNote) {
+      throw new Error(
+        'La nota ya no está disponible.',
+      )
+    }
+
+    const updatedMemberNames =
+      await getMemberDisplayNames(
+        member.businessId,
+        getRelatedUserIds(updatedNote),
+      )
+
+    setNote(updatedNote)
+    setMemberNames(updatedMemberNames)
+    setReschedulingFormOpen(false)
+    setNewScheduledDate('')
+    setReschedulingReason('')
+    setReschedulingMessage(
+      'Fecha de entrega reprogramada correctamente.',
+    )
+  } catch (caughtError) {
+    setReschedulingError(
+      caughtError instanceof Error
+        ? caughtError.message
+        : 'No fue posible reprogramar la entrega.',
+    )
+  } finally {
+    setReschedulingSubmitting(false)
+  }
+}
 
   async function handleMarkDelivered() {
   if (!member || !user || !noteId || !note) {
@@ -1166,7 +1261,112 @@ async function handleCancelSalesNote(
                 </>
               )}
             </dl>
-                        {deliveryMessage && (
+        {reschedulingMessage && (
+              <p role="status">
+                {reschedulingMessage}
+              </p>
+            )}
+
+            {reschedulingError && (
+              <p role="alert">
+                {reschedulingError}
+              </p>
+            )}
+
+            {user &&
+              canRescheduleSalesNoteDelivery(
+                member.role,
+              ) &&
+              note.documentStatus === 'issued' &&
+              note.delivery.status === 'pending' &&
+              !reschedulingFormOpen && (
+                <p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReschedulingFormOpen(true)
+                      setNewScheduledDate('')
+                      setReschedulingReason('')
+                      setReschedulingError('')
+                      setReschedulingMessage('')
+                    }}
+                  >
+                    Reprogramar entrega
+                  </button>
+                </p>
+              )}
+
+            {reschedulingFormOpen && (
+              <form onSubmit={handleRescheduleDelivery}>
+                <fieldset disabled={reschedulingSubmitting}>
+                  <legend>Reprogramar entrega</legend>
+            
+                  <p>
+                    Fecha actual:{' '}
+                    <strong>
+                      {formatScheduledDate(
+                        note.delivery.scheduledDate,
+                      )}
+                    </strong>
+                  </p>
+                    
+                  <p>
+                    <label>
+                      Nueva fecha programada
+                      <input
+                        type="date"
+                        required
+                        value={newScheduledDate}
+                        onChange={(event) =>
+                          setNewScheduledDate(
+                            event.target.value,
+                          )
+                        }
+                      />
+                    </label>
+                  </p>
+                      
+                  <p>
+                    <label>
+                      Motivo de la reprogramación
+                      <textarea
+                        required
+                        minLength={10}
+                        maxLength={500}
+                        rows={4}
+                        value={reschedulingReason}
+                        onChange={(event) =>
+                          setReschedulingReason(
+                            event.target.value,
+                          )
+                        }
+                      />
+                    </label>
+                  </p>
+                      
+                  <p>
+                    <button type="submit">
+                      {reschedulingSubmitting
+                        ? 'Guardando...'
+                        : 'Confirmar nueva fecha'}
+                    </button>{' '}
+                      
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReschedulingFormOpen(false)
+                        setNewScheduledDate('')
+                        setReschedulingReason('')
+                        setReschedulingError('')
+                      }}
+                    >
+                      Cerrar
+                    </button>
+                  </p>
+                </fieldset>
+              </form>
+            )}
+              {deliveryMessage && (
               <p role="status">{deliveryMessage}</p>
             )}
 
@@ -1206,6 +1406,47 @@ async function handleCancelSalesNote(
                 estar disponibles.
               </p>
             )}
+
+            {note.deliveryScheduleChanges.length > 0 && (
+  <>
+    <h3>Historial de reprogramaciones</h3>
+
+    <ol>
+      {note.deliveryScheduleChanges.map(
+        (change) => (
+          <li key={change.id}>
+            <p>
+              <strong>
+                {formatScheduledDate(
+                  change.previousScheduledDate,
+                )}
+              </strong>
+              {' → '}
+              <strong>
+                {formatScheduledDate(
+                  change.newScheduledDate,
+                )}
+              </strong>
+            </p>
+
+            <p>
+              Motivo: {change.reason}
+            </p>
+
+            <p>
+              {formatTimestamp(change.changedAt)}
+              {' · '}
+              {resolveUserName(
+                change.changedBy,
+                memberNames,
+              )}
+            </p>
+          </li>
+        ),
+      )}
+    </ol>
+  </>
+)}
           </section>
 
           <section>

@@ -18,6 +18,16 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/members/$(request.auth.uid)).data.role == 'owner';
     }
 
+    function canRescheduleSalesNote(businessId) {
+      return isActiveMember(businessId)
+        && get(
+          /databases/$(database)/documents/members/$(request.auth.uid)
+        ).data.role in [
+          'owner',
+          'admin'
+        ];
+    }
+
     function canOperate(businessId) {
       return isActiveMember(businessId)
         && get(/databases/$(database)/documents/members/$(request.auth.uid)).data.role in [
@@ -361,7 +371,7 @@ service cloud.firestore {
         && data.updatedBy == request.auth.uid;
     }
 
-    function validDeliveryCompletion(data) {
+function validDeliveryCompletion(data) {
   let hadCurrentDelivery =
     resource.data.keys().hasAny(['delivery']);
 
@@ -402,6 +412,87 @@ service cloud.firestore {
         && data.delivery.scheduledDate == null
       )
     )
+    && data.updatedAt == request.time
+    && data.updatedBy == request.auth.uid;
+}
+
+function validDeliveryRescheduling(
+  businessId,
+  noteId,
+  data
+ ) {
+  let hadCurrentDelivery =
+    resource.data.keys().hasAny(['delivery']);
+
+  let wasPending =
+    (
+      hadCurrentDelivery
+      && resource.data.delivery.status == 'pending'
+    )
+    || (
+      !hadCurrentDelivery
+      && (
+        !resource.data.keys().hasAny([
+          'deliveryStatus'
+        ])
+        || resource.data.deliveryStatus == 'pending'
+      )
+    );
+
+  let changeId =
+    data.lastDeliveryScheduleChangeId;
+
+  let change = getAfter(
+    /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(noteId)/deliveryScheduleChanges/$(changeId)
+  ).data;
+
+  return resource.data.documentStatus == 'issued'
+    && wasPending
+    && data.diff(resource.data)
+      .affectedKeys()
+      .hasOnly([
+        'delivery',
+        'lastDeliveryScheduleChangeId',
+        'updatedAt',
+        'updatedBy'
+      ])
+    && validSalesNoteDelivery(data)
+    && data.delivery.status == 'pending'
+    && (
+      (
+        hadCurrentDelivery
+        && data.delivery.scheduledDate
+          != resource.data.delivery.scheduledDate
+      )
+      || !hadCurrentDelivery
+    )
+    && changeId is string
+    && changeId.size() > 0
+    && change.keys().hasOnly([
+      'previousScheduledDate',
+      'newScheduledDate',
+      'reason',
+      'changedAt',
+      'changedBy'
+    ])
+    && (
+      (
+        hadCurrentDelivery
+        && change.previousScheduledDate
+          == resource.data.delivery.scheduledDate
+      )
+      || (
+        !hadCurrentDelivery
+        && change.previousScheduledDate == null
+      )
+    )
+    && change.newScheduledDate
+      == data.delivery.scheduledDate
+    && change.reason is string
+    && change.reason.size() >= 10
+    && change.reason.size() <= 500
+    && change.changedAt == request.time
+    && change.changedBy == request.auth.uid
     && data.updatedAt == request.time
     && data.updatedBy == request.auth.uid;
 }
@@ -515,7 +606,8 @@ function validSalesNoteCancellation(data) {
           'updatedAt',
           'createdBy',
           'updatedBy',
-          'lastPaymentId'
+          'lastPaymentId',
+          'lastDeliveryScheduleChangeId'
         ])
         && data.folioNumber is int
         && data.folioNumber >= 0
@@ -544,6 +636,7 @@ function validSalesNoteCancellation(data) {
         && data.createdBy == request.auth.uid
         && data.updatedBy == request.auth.uid
         && data.lastPaymentId == null
+        && data.lastDeliveryScheduleChangeId == null
         && getAfter(
           /databases/$(database)/documents/businesses/$(businessId)/counters/salesNotes
         ).data.nextNumber
@@ -829,6 +922,14 @@ function technicianUpdatesServiceDates(businessId) {
     )
   )
   || (
+    canRescheduleSalesNote(businessId)
+    && validDeliveryRescheduling(
+      businessId,
+      noteId,
+      request.resource.data
+    )
+  )
+  || (
     isOwner(businessId)
     && validSalesNoteCancellation(
       request.resource.data
@@ -836,6 +937,64 @@ function technicianUpdatesServiceDates(businessId) {
   );
 
         allow delete: if false;
+
+                match /deliveryScheduleChanges/{changeId} {
+          allow read: if isActiveMember(businessId);
+
+          allow create: if (
+            canRescheduleSalesNote(businessId)
+            && request.resource.data.keys().hasOnly([
+              'previousScheduledDate',
+              'newScheduledDate',
+              'reason',
+              'changedAt',
+              'changedBy'
+            ])
+            && (
+              request.resource.data.previousScheduledDate
+                == null
+              || (
+                request.resource.data.previousScheduledDate
+                  is string
+                && request.resource.data.previousScheduledDate
+                  .matches(
+                    '[0-9]{4}-[0-9]{2}-[0-9]{2}'
+                  )
+              )
+            )
+            && request.resource.data.newScheduledDate
+              is string
+            && request.resource.data.newScheduledDate
+              .matches(
+                '[0-9]{4}-[0-9]{2}-[0-9]{2}'
+              )
+            && request.resource.data.reason is string
+            && request.resource.data.reason.size() >= 10
+            && request.resource.data.reason.size() <= 500
+            && request.resource.data.changedAt
+              == request.time
+            && request.resource.data.changedBy
+              == request.auth.uid
+            && getAfter(
+              /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(noteId)
+            ).data.lastDeliveryScheduleChangeId
+              == changeId
+            && getAfter(
+              /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(noteId)
+            ).data.delivery.scheduledDate
+              == request.resource.data.newScheduledDate
+            && getAfter(
+              /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(noteId)
+            ).data.updatedAt
+              == request.time
+            && getAfter(
+              /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(noteId)
+            ).data.updatedBy
+              == request.auth.uid
+          );
+
+          allow update, delete: if false;
+        }
 
         match /payments/{paymentId} {
           allow read: if isActiveMember(businessId);

@@ -132,6 +132,15 @@ export type SalesNoteCancellation = {
   cancelledBy: string
 }
 
+export type SalesNoteDeliveryScheduleChange = {
+  id: string
+  previousScheduledDate: string | null
+  newScheduledDate: string
+  reason: string
+  changedAt: Timestamp
+  changedBy: string
+}
+
 export type SalesNote = {
   id: string
 
@@ -161,6 +170,7 @@ export type SalesNote = {
   createdBy: string
   updatedBy: string
   lastPaymentId: string | null
+  lastDeliveryScheduleChangeId: string | null
 }
 
 export type Payment = {
@@ -179,6 +189,8 @@ export type SalesNoteDetail = Omit<
 > & {
   delivery: SalesNoteHistoryDelivery
   payments: Payment[]
+  deliveryScheduleChanges:
+    SalesNoteDeliveryScheduleChange[]
 }
 
 export type PaymentInput = {
