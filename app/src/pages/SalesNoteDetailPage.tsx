@@ -4,6 +4,7 @@ import {
   useParams,
 } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
+import { SalesQuotationPrint } from '../components/print/SalesQuotationPrint'
 import {
   EXTINGUISHER_AGENTS,
   EXTINGUISHER_SERVICES,
@@ -49,6 +50,70 @@ const PAYMENT_METHOD_LABELS: Record<
   cash: 'Efectivo',
   transfer: 'Transferencia',
   card: 'Tarjeta',
+}
+
+function waitForPrintableImage(
+  image: HTMLImageElement,
+): Promise<void> {
+  if (image.complete) {
+    return image.naturalWidth > 0
+      ? Promise.resolve()
+      : Promise.reject(
+          new Error(
+            'No fue posible cargar una imagen de la nota.',
+          ),
+        )
+  }
+
+  return new Promise((resolve, reject) => {
+    const handleLoad = () => {
+      cleanup()
+      resolve()
+    }
+
+    const handleError = () => {
+      cleanup()
+      reject(
+        new Error(
+          'No fue posible cargar una imagen de la nota.',
+        ),
+      )
+    }
+
+    const cleanup = () => {
+      image.removeEventListener(
+        'load',
+        handleLoad,
+      )
+
+      image.removeEventListener(
+        'error',
+        handleError,
+      )
+    }
+
+    image.addEventListener(
+      'load',
+      handleLoad,
+      { once: true },
+    )
+
+    image.addEventListener(
+      'error',
+      handleError,
+      { once: true },
+    )
+  })
+}
+
+function waitForPrintLayout(): Promise<void> {
+  return new Promise((resolve) => {
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        resolve()
+      })
+    })
+  })
 }
 
 function formatTimestamp(
@@ -164,6 +229,14 @@ export function SalesNoteDetailPage() {
 >({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+    const [printableNote, setPrintableNote] =
+    useState<SalesNoteDetail | null>(null)
+
+  const [preparingPrint, setPreparingPrint] =
+    useState(false)
+
+  const [printError, setPrintError] =
+    useState('')
     const [paymentFormOpen, setPaymentFormOpen] =
     useState(false)
 
@@ -295,6 +368,67 @@ const [cancellationMessage, setCancellationMessage] =
       cancelled = true
     }
   }, [member, noteId])
+
+    useEffect(() => {
+    if (!printableNote) {
+      return
+    }
+
+    let cancelled = false
+
+    async function openPrintDialog() {
+      try {
+        const printableImages = Array.from(
+          document.querySelectorAll<HTMLImageElement>(
+            '.quotation-print-area img',
+          ),
+        )
+
+        await Promise.all(
+          printableImages.map(
+            waitForPrintableImage,
+          ),
+        )
+
+        await waitForPrintLayout()
+
+        if (cancelled) {
+          return
+        }
+
+        window.print()
+      } catch (caughtError) {
+        if (!cancelled) {
+          setPrintError(
+            caughtError instanceof Error
+              ? caughtError.message
+              : 'No fue posible preparar la nota.',
+          )
+        }
+      } finally {
+        if (!cancelled) {
+          setPrintableNote(null)
+          setPreparingPrint(false)
+        }
+      }
+    }
+
+    void openPrintDialog()
+
+    return () => {
+      cancelled = true
+    }
+  }, [printableNote])
+
+      function handlePrintNote() {
+    if (!note || preparingPrint) {
+      return
+    }
+
+    setPrintError('')
+    setPreparingPrint(true)
+    setPrintableNote(note)
+  }
 
     function closePaymentForm() {
     setPaymentFormOpen(false)
@@ -647,6 +781,24 @@ async function handleCancelSalesNote(
               Emitida el{' '}
               {formatTimestamp(note.issuedAt)}
             </p>
+
+            <p>
+  <button
+    type="button"
+    disabled={preparingPrint}
+    onClick={handlePrintNote}
+  >
+    {preparingPrint
+      ? 'Preparando impresión...'
+      : note.documentStatus === 'cancelled'
+        ? 'Reimprimir nota cancelada'
+        : 'Imprimir nota'}
+  </button>
+</p>
+
+{printError && (
+  <p role="alert">{printError}</p>
+)}
           </header>
 
           <section>
@@ -1544,7 +1696,46 @@ async function handleCancelSalesNote(
               <dd>{resolveUserName(note.updatedBy,memberNames)}</dd>
             </dl>
           </section>
-        </>
+               </>
+      )}
+
+      {printableNote && (
+        <SalesQuotationPrint
+          folioDisplay={
+            printableNote.folioDisplay
+          }
+          quotationDate={
+            printableNote.issuedAt.toDate()
+          }
+          client={
+            printableNote.customerSnapshot
+          }
+          items={printableNote.items}
+          amounts={printableNote.amounts}
+          scheduledDeliveryDate={
+            printableNote.delivery.scheduledDate
+          }
+          notes={printableNote.notes}
+          terms={printableNote.terms}
+          registeredNote={{
+            documentStatus:
+              printableNote.documentStatus,
+            paymentStatus:
+              printableNote.paymentStatus,
+            paidCents:
+              printableNote.amounts.paidCents,
+            balanceCents:
+              printableNote.amounts.balanceCents,
+            payments:
+              printableNote.payments.filter(
+                (payment) => payment.active,
+              ),
+            delivery:
+              printableNote.delivery,
+            cancellation:
+              printableNote.cancellation,
+          }}
+        />
       )}
     </main>
   )

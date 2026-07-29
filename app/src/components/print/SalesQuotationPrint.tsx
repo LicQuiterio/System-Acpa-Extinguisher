@@ -9,6 +9,12 @@ import {
 import { ACPA_QUOTATION_SETTINGS } from '../../constants/quotationSettings'
 import type { SalesClient } from '../../types/client'
 import type {
+  CustomerSnapshot,
+  DocumentStatus,
+  Payment,
+  PaymentStatus,
+  SalesNoteCancellation,
+  SalesNoteHistoryDelivery,
   SalesNoteItem,
   SalesNoteTerms,
 } from '../../types/salesNote'
@@ -25,15 +31,26 @@ export type SalesQuotationPrintAmounts = {
   totalCents: number
 }
 
+export type RegisteredSalesNotePrintData = {
+  documentStatus: DocumentStatus
+  paymentStatus: PaymentStatus
+  paidCents: number
+  balanceCents: number
+  payments: Payment[]
+  delivery: SalesNoteHistoryDelivery
+  cancellation: SalesNoteCancellation | null
+}
+
 type SalesQuotationPrintProps = {
   folioDisplay: string
   quotationDate: Date
-  client: SalesClient
+  client: SalesClient | CustomerSnapshot
   items: SalesNoteItem[]
   amounts: SalesQuotationPrintAmounts
   scheduledDeliveryDate: string | null
   notes: string
   terms?: SalesNoteTerms
+  registeredNote?: RegisteredSalesNotePrintData
 }
 
 const DATE_FORMATTER = new Intl.DateTimeFormat(
@@ -44,6 +61,40 @@ const DATE_FORMATTER = new Intl.DateTimeFormat(
     year: 'numeric',
   },
 )
+
+const DATE_TIME_FORMATTER = new Intl.DateTimeFormat(
+  'es-MX',
+  {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  },
+)
+
+const DOCUMENT_STATUS_LABELS: Record<
+  DocumentStatus,
+  string
+> = {
+  issued: 'Emitida',
+  cancelled: 'Cancelada',
+}
+
+const PAYMENT_STATUS_LABELS: Record<
+  PaymentStatus,
+  string
+> = {
+  unpaid: 'Sin pago',
+  partial: 'Pago parcial',
+  paid: 'Pagada',
+}
+
+const PAYMENT_METHOD_LABELS: Record<
+  Payment['method'],
+  string
+> = {
+  cash: 'Efectivo',
+  transfer: 'Transferencia',
+  card: 'Tarjeta',
+}
 
 function getOptionLabel(
   options: readonly {
@@ -60,11 +111,21 @@ function getOptionLabel(
 }
 
 function getClientName(
-  client: SalesClient,
+  client: SalesClient | CustomerSnapshot,
 ): string {
   return client.type === 'company'
     ? client.companyName
     : client.contactName
+}
+
+function getClientServiceArea(
+  client: SalesClient | CustomerSnapshot,
+): string {
+  if ('serviceAreaSnapshot' in client) {
+    return client.serviceAreaSnapshot.displayName
+  }
+
+  return client.serviceAreaDisplayName
 }
 
 function getItemDescription(
@@ -132,18 +193,42 @@ export function SalesQuotationPrint({
   amounts,
   scheduledDeliveryDate,
   notes,
+  registeredNote,
   terms = DEFAULT_SALES_TERMS,
 }: SalesQuotationPrintProps) {
   const settings = ACPA_QUOTATION_SETTINGS
+
   const formattedDeliveryDate =
     formatScheduledDate(scheduledDeliveryDate)
+
+  const documentTitle = registeredNote
+    ? 'Nota de venta'
+    : 'Cotización'
+
+  const isCancelled =
+    registeredNote?.documentStatus === 'cancelled'
+
+  const deliveredAt =
+    registeredNote?.delivery.deliveredAt
+      ? DATE_TIME_FORMATTER.format(
+          registeredNote.delivery.deliveredAt.toDate(),
+        )
+      : null
 
   return (
     <article
       className="quotation-print-area"
-      aria-label={`Cotización ${folioDisplay}`}
+      aria-label={`${documentTitle} ${folioDisplay}`}
     >
       <div className="quotation-sheet">
+        {isCancelled && (
+          <div
+            className="quotation-cancelled-watermark"
+            aria-hidden="true"
+          >
+            CANCELADA
+          </div>
+        )}
                 <header className="quotation-header">
           <div className="quotation-brand">
             <img
@@ -153,33 +238,34 @@ export function SalesQuotationPrint({
               loading="eager"
               decoding="sync"
             />
+
           </div>
-          
+
           <div className="quotation-business">
             <strong>{settings.businessName}</strong>
-          
+
             <p>{settings.activity}</p>
-          
+
             <p>
               {settings.addressLines.join(' · ')}
             </p>
-          
+
             <p className="quotation-business-contact">
               <span>Tel. {settings.phone}</span>
               <span>{settings.email}</span>
               <span>RFC: {settings.rfc}</span>
             </p>
           </div>
-          
+
           <div className="quotation-title">
-            <h1>Cotización</h1>
-          
+            <h1>{documentTitle}</h1>
+
             <dl>
               <div>
                 <dt>No.</dt>
                 <dd>{folioDisplay}</dd>
               </div>
-          
+
               <div>
                 <dt>Fecha</dt>
                 <dd>
@@ -188,23 +274,25 @@ export function SalesQuotationPrint({
                   )}
                 </dd>
               </div>
-                
-              <div>
-                <dt>Vigencia</dt>
-                <dd>{QUOTATION_VALIDITY}</dd>
-              </div>
+
+              {!registeredNote && (
+                <div>
+                  <dt>Vigencia</dt>
+                  <dd>{QUOTATION_VALIDITY}</dd>
+                </div>
+              )}
             </dl>
           </div>
         </header>
-                
+
         <section className="quotation-client-card">
           <div className="quotation-client-name">
             <span className="quotation-client-label">
-              Cotizar a
+              {registeredNote ? 'Cliente' : 'Cotizar a'}
             </span>
-                
+
             <strong>{getClientName(client)}</strong>
-                
+
             {client.type === 'company' &&
               client.contactName && (
                 <p>
@@ -212,29 +300,31 @@ export function SalesQuotationPrint({
                 </p>
               )}
           </div>
-            
+
           <div className="quotation-client-details">
             {client.phone && (
               <span>Tel. {client.phone}</span>
             )}
-        
+
             {client.email && (
               <span>{client.email}</span>
             )}
-        
+
             {client.address && (
               <span>{client.address}</span>
             )}
-        
+
             <span>
-              {client.serviceAreaSnapshot.displayName}
+              {getClientServiceArea(client)}
             </span>
           </div>
         </section>
 
         <p className="quotation-introduction">
-          {settings.introduction}
-        </p>
+  {registeredNote
+    ? 'Nota de venta correspondiente a los equipos y servicios detallados.'
+    : settings.introduction}
+</p>
 
         <table className="quotation-items">
           <thead>
@@ -279,11 +369,12 @@ export function SalesQuotationPrint({
             <h2>Condiciones comerciales</h2>
 
             <dl>
-              <div>
-                <dt>Vigencia</dt>
-                <dd>{QUOTATION_VALIDITY}</dd>
-              </div>
-
+                {!registeredNote && (
+                  <div>
+                    <dt>Vigencia</dt>
+                    <dd>{QUOTATION_VALIDITY}</dd>
+                  </div>
+                )}
               <div>
                 <dt>Tiempo de entrega</dt>
                 <dd>{terms.deliveryTime}</dd>
@@ -367,6 +458,7 @@ export function SalesQuotationPrint({
         </section>
 
         <section className="quotation-amount-words">
+
           <strong>Cantidad con letra:</strong>
           <span>
             {formatAmountInWords(
@@ -374,6 +466,132 @@ export function SalesQuotationPrint({
             )}
           </span>
         </section>
+        {registeredNote && (
+          <>
+            <section className="quotation-note-status">
+              <div>
+                <span>Documento</span>
+                <strong>
+                  {
+                    DOCUMENT_STATUS_LABELS[
+                      registeredNote.documentStatus
+                    ]
+                  }
+                </strong>
+              </div>
+
+              <div>
+                <span>Estado de pago</span>
+                <strong>
+                  {
+                    PAYMENT_STATUS_LABELS[
+                      registeredNote.paymentStatus
+                    ]
+                  }
+                </strong>
+              </div>
+
+              <div>
+                <span>Pagado</span>
+                <strong>
+                  {formatMoneyFromCents(
+                    registeredNote.paidCents,
+                  )}
+                </strong>
+              </div>
+
+              <div>
+                <span>Saldo pendiente</span>
+                <strong>
+                  {formatMoneyFromCents(
+                    registeredNote.balanceCents,
+                  )}
+                </strong>
+              </div>
+
+              <div>
+                <span>Entrega</span>
+                <strong>
+                  {registeredNote.delivery.status ===
+                  'delivered'
+                    ? 'Entregada'
+                    : 'Pendiente'}
+                </strong>
+              </div>
+
+              <div>
+                <span>Fecha real de entrega</span>
+                <strong>
+                  {deliveredAt ?? 'No registrada'}
+                </strong>
+              </div>
+            </section>
+
+            <section className="quotation-payments">
+              <h2>Pagos registrados</h2>
+
+              {registeredNote.payments.length === 0 ? (
+                <p>No se han registrado pagos.</p>
+              ) : (
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th>Método</th>
+                      <th>Importe</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {registeredNote.payments.map(
+                      (payment) => (
+                        <tr key={payment.id}>
+                          <td>
+                            {DATE_TIME_FORMATTER.format(
+                              payment.paidAt.toDate(),
+                            )}
+                          </td>
+
+                          <td>
+                            {
+                              PAYMENT_METHOD_LABELS[
+                                payment.method
+                              ]
+                            }
+                          </td>
+
+                          <td>
+                            {formatMoneyFromCents(
+                              payment.amountCents,
+                            )}
+                          </td>
+                        </tr>
+                      ),
+                    )}
+                  </tbody>
+                </table>
+              )}
+            </section>
+
+            {registeredNote.cancellation && (
+              <section className="quotation-cancellation">
+                <h2>Cancelación</h2>
+
+                <p>
+                  <strong>Motivo:</strong>{' '}
+                  {registeredNote.cancellation.reason}
+                </p>
+
+                <p>
+                  <strong>Fecha:</strong>{' '}
+                  {DATE_TIME_FORMATTER.format(
+                    registeredNote.cancellation.cancelledAt.toDate(),
+                  )}
+                </p>
+              </section>
+            )}
+          </>
+        )}
 
         {notes.trim() && (
           <section className="quotation-notes">

@@ -587,9 +587,106 @@
     display: none !important;
   }
 
-  .quotation-print-area {
+    .quotation-print-area {
     position: static;
     inset: auto;
     width: 100%;
+  }
+
+  .quotation-sheet {
+    position: relative;
+  }
+
+  .quotation-cancelled-watermark {
+    position: absolute;
+    z-index: 10;
+    top: 102mm;
+    left: 50%;
+    color: #a11720;
+    font-size: 46pt;
+    font-weight: 800;
+    letter-spacing: 4pt;
+    opacity: 0.14;
+    pointer-events: none;
+    transform: translateX(-50%) rotate(-28deg);
+  }
+
+  .quotation-note-status {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5mm;
+    margin-top: 3mm;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .quotation-note-status > div {
+    padding: 1.5mm 2mm;
+    border: 0.3mm solid #dbc5c7;
+    background: #faf6f6;
+  }
+
+  .quotation-note-status span,
+  .quotation-note-status strong {
+    display: block;
+  }
+
+  .quotation-note-status span {
+    color: #666;
+    font-size: 6.5pt;
+    text-transform: uppercase;
+  }
+
+  .quotation-note-status strong {
+    margin-top: 0.5mm;
+    font-size: 8pt;
+  }
+
+  .quotation-payments,
+  .quotation-cancellation {
+    margin-top: 3mm;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .quotation-payments h2,
+  .quotation-cancellation h2 {
+    margin: 0 0 1.5mm;
+    font-size: 8.5pt;
+  }
+
+  .quotation-payments p,
+  .quotation-cancellation p {
+    margin: 0 0 1mm;
+    font-size: 7.5pt;
+  }
+
+  .quotation-payments table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 7.5pt;
+  }
+
+  .quotation-payments th,
+  .quotation-payments td {
+    padding: 1.2mm 2mm;
+    border-bottom: 0.25mm solid #ddd;
+    text-align: left;
+  }
+
+  .quotation-payments th {
+    background: #f1e2e3;
+    color: #64151a;
+  }
+
+  .quotation-payments th:last-child,
+  .quotation-payments td:last-child {
+    text-align: right;
+  }
+
+  .quotation-cancellation {
+    padding: 2mm 3mm;
+    border: 0.4mm solid #a11720;
+    color: #72151b;
   }
 }
