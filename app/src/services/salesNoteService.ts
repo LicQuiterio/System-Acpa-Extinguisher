@@ -208,6 +208,51 @@ export function resolveHistoryDelivery(
   }
 }
 
+export type NextSalesNoteFolio = {
+  folioNumber: number
+  folioDisplay: string
+}
+
+export async function getNextSalesNoteFolio(
+  businessId: string,
+): Promise<NextSalesNoteFolio> {
+  if (!businessId.trim()) {
+    throw new Error('El negocio es obligatorio')
+  }
+
+  const counterReference = doc(
+    db,
+    'businesses',
+    businessId,
+    'counters',
+    'salesNotes',
+  )
+
+  const counterSnapshot =
+    await getDoc(counterReference)
+
+  const storedNextNumber =
+    counterSnapshot.exists()
+      ? counterSnapshot.data().nextNumber
+      : INITIAL_SALES_FOLIO
+
+  if (
+    !Number.isSafeInteger(storedNextNumber) ||
+    storedNextNumber < 0
+  ) {
+    throw new Error(
+      'El contador de folios no es válido',
+    )
+  }
+
+  return {
+    folioNumber: storedNextNumber,
+    folioDisplay: String(
+      storedNextNumber,
+    ).padStart(5, '0'),
+  }
+}
+
 export async function createSalesNote(
   businessId: string,
   userId: string,

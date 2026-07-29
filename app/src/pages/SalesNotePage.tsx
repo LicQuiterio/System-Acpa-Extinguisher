@@ -6,12 +6,17 @@ import {
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { SalesNoteItemsEditor } from '../components/SalesNoteItemsEditor'
+import {
+  SalesQuotationPrint,
+  type SalesQuotationPrintAmounts,
+} from '../components/print/SalesQuotationPrint'
 import { getSalesClients } from '../services/salesClientService'
 import type {
   CreateSalesNoteResult,
   PaymentInput,
   PaymentMethod,
   SalesNoteDeliveryInput,
+  SalesNoteItem,
 } from '../types/salesNote'
 import type { SalesNoteItemDraft } from '../types/salesNoteDraft'
 import type { SalesClient } from '../types/client'
@@ -30,12 +35,88 @@ import {
   convertItemDrafts,
 } from '../utils/salesNoteDraft'
 import { DEFAULT_SALES_TERMS } from '../constants/salesSettings'
-import { createSalesNote } from '../services/salesNoteService'
+import { 
+  createSalesNote,
+  getNextSalesNoteFolio,
+ } from '../services/salesNoteService'
 
 type PaymentDraft = {
   id: string
   amount: string
   method: PaymentMethod
+}
+
+type PrintableQuotation = {
+  folioDisplay: string
+  quotationDate: Date
+  client: SalesClient
+  items: SalesNoteItem[]
+  amounts: SalesQuotationPrintAmounts
+  scheduledDeliveryDate: string | null
+  notes: string
+}
+
+function waitForPrintableImage(
+  image: HTMLImageElement,
+): Promise<void> {
+  if (image.complete) {
+    return image.naturalWidth > 0
+      ? Promise.resolve()
+      : Promise.reject(
+          new Error(
+            'No fue posible cargar una imagen de la cotización',
+          ),
+        )
+  }
+
+  return new Promise((resolve, reject) => {
+    const handleLoad = () => {
+      cleanup()
+      resolve()
+    }
+
+    const handleError = () => {
+      cleanup()
+      reject(
+        new Error(
+          'No fue posible cargar una imagen de la cotización',
+        ),
+      )
+    }
+
+    const cleanup = () => {
+      image.removeEventListener(
+        'load',
+        handleLoad,
+      )
+      image.removeEventListener(
+        'error',
+        handleError,
+      )
+    }
+
+    image.addEventListener(
+      'load',
+      handleLoad,
+      { once: true },
+    )
+
+    image.addEventListener(
+      'error',
+      handleError,
+      { once: true },
+    )
+  })
+}
+
+function waitForPrintLayout(): Promise<void> {
+  return new Promise((resolve) => {
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        resolve()
+      })
+    })
+  })
 }
 
 function createPaymentDraft(): PaymentDraft {
@@ -79,6 +160,15 @@ export function SalesNotePage() {
     const [saving, setSaving] = useState(false)
   const [createdNote, setCreatedNote] =
     useState<CreateSalesNoteResult | null>(null)
+    const [
+  printableQuotation,
+  setPrintableQuotation,
+] = useState<PrintableQuotation | null>(null)
+
+const [
+  preparingQuotation,
+  setPreparingQuotation,
+] = useState(false)
     const [delivery, setDelivery] =
   useState<SalesNoteDeliveryInput>({
     status: 'pending',
@@ -86,7 +176,10 @@ export function SalesNotePage() {
   })
 
   const formLocked =
-    saving || createdNote !== null
+  saving ||
+  preparingQuotation ||
+  printableQuotation !== null ||
+  createdNote !== null
 
   useEffect(() => {
     if (!member) return
@@ -120,6 +213,56 @@ export function SalesNotePage() {
       cancelled = true
     }
   }, [member])
+
+  useEffect(() => {
+  if (!printableQuotation) {
+    return
+  }
+
+  let cancelled = false
+
+  async function openPrintDialog() {
+    try {
+      const printableImages = Array.from(
+        document.querySelectorAll<HTMLImageElement>(
+          '.quotation-print-area img',
+        ),
+      )
+
+      await Promise.all(
+        printableImages.map(
+          waitForPrintableImage,
+        ),
+      )
+
+      await waitForPrintLayout()
+
+      if (cancelled) {
+        return
+      }
+
+      window.print()
+    } catch (caughtError) {
+      if (!cancelled) {
+        setError(
+          caughtError instanceof Error
+            ? caughtError.message
+            : 'No fue posible preparar las imágenes de la cotización',
+        )
+      }
+    } finally {
+      if (!cancelled) {
+        setPrintableQuotation(null)
+      }
+    }
+  }
+
+  void openPrintDialog()
+
+  return () => {
+    cancelled = true
+  }
+}, [printableQuotation])
 
   const selectedClient = useMemo(
     () =>
@@ -221,6 +364,8 @@ export function SalesNotePage() {
     setError('')
     setMessage('')
     setCreatedNote(null)
+    setPrintableQuotation(null)
+    setPreparingQuotation(false)
     setDelivery({
       status: 'pending',
       scheduledDate: '',
@@ -328,21 +473,66 @@ export function SalesNotePage() {
     }
   }
 
-  function printTemporaryQuotation() {
-    setError('')
-    setMessage('')
+  async function printTemporaryQuotation() {
+  setError('')
+  setMessage('')
 
-    try {
-      convertItemDrafts(items)
-      window.print()
-    } catch (caughtError) {
-      setError(
-        caughtError instanceof Error
-          ? caughtError.message
-          : 'Revisa los conceptos',
+  const currentMember = member
+  const currentClient = selectedClient
+
+  try {
+    if (!currentMember) {
+      throw new Error(
+        'No existe una membresía activa',
       )
     }
+
+    if (!currentClient) {
+      throw new Error(
+        'Selecciona un cliente registrado',
+      )
+    }
+
+    const convertedItems =
+      convertItemDrafts(items)
+
+    setPreparingQuotation(true)
+
+    const nextFolio =
+      await getNextSalesNoteFolio(
+        currentMember.businessId,
+      )
+
+    setPrintableQuotation({
+      folioDisplay: nextFolio.folioDisplay,
+      quotationDate: new Date(),
+      client: currentClient,
+      items: convertedItems,
+      amounts: {
+        subtotalCents:
+          summary.subtotalCents,
+        applyVat,
+        vatAmountCents:
+          summary.vatAmountCents,
+        applyResicoWithholding,
+        resicoAmountCents:
+          summary.resicoAmountCents,
+        totalCents: summary.totalCents,
+      },
+      scheduledDeliveryDate:
+        delivery.scheduledDate,
+      notes,
+    })
+  } catch (caughtError) {
+    setError(
+      caughtError instanceof Error
+        ? caughtError.message
+        : 'No fue posible preparar la cotización',
+    )
+  } finally {
+    setPreparingQuotation(false)
   }
+}
 
   if (!member) {
     return (
@@ -593,11 +783,11 @@ export function SalesNotePage() {
 
       <section>
         <h2>Entrega</h2>
-            
+
         <label htmlFor="sales-delivery-status">
           Estado de entrega
         </label>
-            
+
         <select
           id="sales-delivery-status"
           value={delivery.status}
@@ -661,7 +851,7 @@ export function SalesNotePage() {
             setMessage('')
           }}
         />
-      
+
         {delivery.status === 'pending' ? (
           <p>
             Esta fecha indica cuándo ACPA se compromete
@@ -703,9 +893,13 @@ export function SalesNotePage() {
         <button
           type="button"
           disabled={formLocked}
-          onClick={printTemporaryQuotation}
+          onClick={() =>
+            void printTemporaryQuotation()
+          }
         >
-          Imprimir cotización temporal
+          {preparingQuotation
+            ? 'Preparando cotización...'
+            : 'Imprimir cotización temporal'}
         </button>
 
         <button
@@ -719,7 +913,14 @@ export function SalesNotePage() {
               ? `Nota ${createdNote.folioDisplay} registrada`
               : 'Registrar nota'}
         </button>
-      </footer>
+        
+            </footer>
+
+      {printableQuotation && (
+        <SalesQuotationPrint
+          {...printableQuotation}
+        />
+      )}
     </main>
   )
 }

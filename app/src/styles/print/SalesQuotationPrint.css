@@ -1,0 +1,595 @@
+.quotation-print-area {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: letter portrait;
+    margin: 10mm;
+  }
+
+  body {
+    margin: 0;
+    background: #fff;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .quotation-print-area,
+  .quotation-print-area * {
+    visibility: visible;
+  }
+
+  .quotation-print-area {
+    display: block;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    color: #202020;
+    background: #fff;
+    font-family:
+      Arial,
+      Helvetica,
+      sans-serif;
+    font-size: 9.5pt;
+    line-height: 1.35;
+    text-align: left;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .quotation-sheet {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 195mm;
+    min-height: 257mm;
+    margin: 0 auto;
+    background: #fff;
+  }
+
+  .quotation-header {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    align-items: start;
+    gap: 12mm;
+    margin-bottom: 8mm;
+  }
+
+  .quotation-logo {
+    display: block;
+    width: 76mm;
+    max-width: 100%;
+    height: auto;
+  }
+
+  .quotation-title {
+    text-align: right;
+  }
+
+  .quotation-title h1 {
+    margin: 0 0 4mm;
+    color: #1f1f1f;
+    font-size: 25pt;
+    font-weight: 700;
+    letter-spacing: -0.5pt;
+  }
+
+  .quotation-title dl,
+  .quotation-totals dl,
+  .quotation-terms dl {
+    margin: 0;
+  }
+
+  .quotation-title dl > div {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 5mm;
+    margin-bottom: 1mm;
+  }
+
+  .quotation-title dt {
+    color: #777;
+  }
+
+  .quotation-title dd {
+    margin: 0;
+    font-weight: 700;
+  }
+
+  .quotation-parties {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15mm;
+    margin-bottom: 6mm;
+  }
+
+  .quotation-parties > div {
+    min-width: 0;
+  }
+
+  .quotation-parties h2,
+  .quotation-terms h2,
+  .quotation-notes h2,
+  .quotation-bank h2 {
+    margin: 0 0 2mm;
+    color: #202020;
+    font-size: 10pt;
+    font-weight: 700;
+  }
+
+  .quotation-parties strong {
+    display: block;
+    margin-bottom: 1.5mm;
+    color: #202020;
+    font-size: 11pt;
+  }
+
+  .quotation-parties p,
+  .quotation-bank p,
+  .quotation-signature p,
+  .quotation-closing p {
+    margin: 0 0 0.8mm;
+  }
+
+  .quotation-client {
+    text-align: right;
+  }
+
+  .quotation-introduction {
+    margin: 0 0 4mm;
+    padding: 3mm 4mm;
+    border-left: 1.5mm solid #8d1e24;
+    background: #f8eeee;
+    color: #333;
+    font-weight: 600;
+  }
+
+  .quotation-items {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 8.5pt;
+  }
+
+  .quotation-items thead {
+    display: table-header-group;
+  }
+
+  .quotation-items tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .quotation-items th {
+    padding: 2.5mm 2mm;
+    border: 0;
+    background: #8d1e24;
+    color: #fff;
+    font-size: 7.5pt;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .quotation-items th:nth-child(1) {
+    width: 27%;
+    text-align: left;
+  }
+
+  .quotation-items th:nth-child(2) {
+    width: 30%;
+    text-align: left;
+  }
+
+  .quotation-items th:nth-child(3) {
+    width: 10%;
+    text-align: center;
+  }
+
+  .quotation-items th:nth-child(4),
+  .quotation-items th:nth-child(5) {
+    width: 16.5%;
+    text-align: right;
+  }
+
+  .quotation-items td {
+    box-sizing: border-box;
+    padding: 3mm 2mm;
+    border-bottom: 0.25mm solid #ddd;
+    vertical-align: top;
+    overflow-wrap: anywhere;
+  }
+
+  .quotation-items tbody tr:nth-child(even) {
+    background: #f8f4f4;
+  }
+
+  .quotation-items td:nth-child(3) {
+    text-align: center;
+  }
+
+  .quotation-items td:nth-child(4),
+  .quotation-items td:nth-child(5) {
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .quotation-disclaimer {
+    margin: 1.5mm 0 5mm;
+    color: #666;
+    font-size: 7.5pt;
+  }
+
+  .quotation-summary {
+    display: grid;
+    grid-template-columns: 1fr 69mm;
+    align-items: start;
+    gap: 12mm;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .quotation-terms dl > div {
+    display: grid;
+    grid-template-columns: 34mm 1fr;
+    gap: 2mm;
+    margin-bottom: 1mm;
+  }
+
+  .quotation-terms dt {
+    font-weight: 700;
+  }
+
+  .quotation-terms dd {
+    margin: 0;
+  }
+
+  .quotation-terms ul {
+    margin: 3mm 0 0;
+    padding-left: 5mm;
+    color: #555;
+    font-size: 7.5pt;
+  }
+
+  .quotation-terms li {
+    margin-bottom: 0.8mm;
+  }
+
+  .quotation-totals dl > div {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 5mm;
+    padding: 1.5mm 3mm;
+  }
+
+  .quotation-totals dt {
+    font-weight: 600;
+  }
+
+  .quotation-totals dd {
+    margin: 0;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .quotation-totals .quotation-total {
+    margin-top: 1mm;
+    padding-block: 2.5mm;
+    background: #f1e2e3;
+    color: #64151a;
+    font-size: 11pt;
+    font-weight: 700;
+  }
+
+  .quotation-amount-words {
+    display: grid;
+    grid-template-columns: 37mm 1fr;
+    gap: 3mm;
+    margin-top: 5mm;
+    padding: 3mm 4mm;
+    border: 0.3mm solid #d7c0c2;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .quotation-notes {
+    margin-top: 5mm;
+    padding-top: 3mm;
+    border-top: 0.3mm solid #ddd;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .quotation-notes p {
+    margin: 0;
+    white-space: pre-wrap;
+  }
+
+  .quotation-footer-data {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: end;
+    gap: 15mm;
+    margin-top: 7mm;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .quotation-bank {
+    padding: 4mm;
+    background: #f8f4f4;
+  }
+
+  .quotation-signature {
+    text-align: center;
+  }
+
+  .quotation-signature-line {
+    width: 52mm;
+    height: 12mm;
+    margin: 0 auto 1.5mm;
+    border-bottom: 0.3mm solid #555;
+  }
+
+  .quotation-closing {
+    margin-top: 6mm;
+    padding-top: 3mm;
+    border-top: 0.5mm solid #8d1e24;
+    text-align: center;
+    break-inside: avoid;
+    page-break-inside: avoSid;
+  }
+
+  .quotation-closing strong {
+    color: #8d1e24;
+    font-size: 10pt;
+  }
+
+    /* Distribución compacta para aprovechar la hoja carta */
+
+  .quotation-sheet {
+    min-height: auto;
+  }
+
+  .quotation-header {
+    grid-template-columns: 48mm 1fr 48mm;
+    align-items: center;
+    gap: 5mm;
+    margin-bottom: 4mm;
+  }
+
+  .quotation-logo {
+    width: 47mm;
+  }
+
+  .quotation-business {
+    min-width: 0;
+    color: #444;
+    font-size: 7.2pt;
+    line-height: 1.25;
+  }
+
+  .quotation-business > strong {
+    display: block;
+    margin-bottom: 1mm;
+    color: #202020;
+    font-size: 10pt;
+  }
+
+  .quotation-business p {
+    margin: 0 0 0.7mm;
+  }
+
+  .quotation-business-contact {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5mm 3mm;
+  }
+
+  .quotation-title h1 {
+    margin-bottom: 2mm;
+    font-size: 20pt;
+  }
+
+  .quotation-title dl {
+    font-size: 7.5pt;
+  }
+
+  .quotation-title dl > div {
+    gap: 3mm;
+    margin-bottom: 0.5mm;
+  }
+
+  .quotation-client-card {
+    display: grid;
+    grid-template-columns: 0.9fr 1.1fr;
+    align-items: center;
+    gap: 8mm;
+    margin-bottom: 3mm;
+    padding: 2.5mm 3.5mm;
+    border: 0.3mm solid #dbc5c7;
+    background: #faf6f6;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .quotation-client-label {
+    display: block;
+    margin-bottom: 0.5mm;
+    color: #8d1e24;
+    font-size: 7pt;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .quotation-client-name strong {
+    display: block;
+    color: #202020;
+    font-size: 10.5pt;
+  }
+
+  .quotation-client-name p {
+    margin: 0.5mm 0 0;
+    font-size: 8pt;
+  }
+
+  .quotation-client-details {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.5mm 3mm;
+    font-size: 7.5pt;
+    text-align: right;
+  }
+
+  .quotation-introduction {
+    margin-bottom: 3mm;
+    padding: 2mm 3mm;
+    font-size: 8pt;
+  }
+
+  .quotation-items th {
+    padding: 2mm 1.8mm;
+    font-size: 7pt;
+  }
+
+  .quotation-items td {
+    padding: 2.2mm 1.8mm;
+  }
+
+  .quotation-disclaimer {
+    margin: 1mm 0 3mm;
+    font-size: 6.8pt;
+  }
+
+  .quotation-summary {
+    grid-template-columns: 1fr 62mm;
+    gap: 8mm;
+  }
+
+  .quotation-terms {
+    font-size: 7.5pt;
+  }
+
+  .quotation-terms h2 {
+    margin-bottom: 1.2mm;
+    font-size: 8.5pt;
+  }
+
+  .quotation-terms dl > div {
+    grid-template-columns: 30mm 1fr;
+    margin-bottom: 0.6mm;
+  }
+
+  .quotation-terms ul {
+    columns: 2;
+    column-gap: 6mm;
+    margin-top: 2mm;
+    padding-left: 4mm;
+    font-size: 6.5pt;
+  }
+
+  .quotation-terms li {
+    margin-bottom: 0.5mm;
+    break-inside: avoid;
+  }
+
+  .quotation-totals dl > div {
+    padding: 1mm 2.5mm;
+  }
+
+  .quotation-totals .quotation-total {
+    padding-block: 1.8mm;
+    font-size: 10pt;
+  }
+
+  .quotation-amount-words {
+    grid-template-columns: 34mm 1fr;
+    gap: 2mm;
+    margin-top: 3mm;
+    padding: 2mm 3mm;
+    font-size: 8pt;
+  }
+
+  .quotation-notes {
+    margin-top: 3mm;
+    padding-top: 2mm;
+    font-size: 8pt;
+  }
+
+  .quotation-notes h2 {
+    margin-bottom: 1mm;
+    font-size: 8.5pt;
+  }
+
+  .quotation-footer-data {
+    gap: 8mm;
+    margin-top: 4mm;
+  }
+
+  .quotation-bank {
+    padding: 2.5mm 3mm;
+    font-size: 7.5pt;
+  }
+
+  .quotation-bank h2 {
+    margin-bottom: 1mm;
+    font-size: 8.5pt;
+  }
+
+  .quotation-signature {
+    font-size: 8pt;
+  }
+
+  .quotation-signature-line {
+    width: 45mm;
+    height: 6mm;
+    margin-bottom: 1mm;
+  }
+
+  .quotation-closing {
+    margin-top: 3mm;
+    padding-top: 2mm;
+    font-size: 7.5pt;
+  }
+
+  .quotation-closing strong {
+    font-size: 8.5pt;
+  }
+
+    /* Evita que la interfaz invisible genere páginas vacías */
+
+  html,
+  body,
+  #root {
+    width: auto;
+    height: auto;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    display: block;
+    overflow: visible;
+  }
+
+  main {
+    width: auto;
+    height: auto;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    display: block;
+    overflow: visible;
+  }
+
+  main > :not(.quotation-print-area) {
+    display: none !important;
+  }
+
+  .quotation-print-area {
+    position: static;
+    inset: auto;
+    width: 100%;
+  }
+}
