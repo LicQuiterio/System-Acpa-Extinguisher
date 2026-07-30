@@ -50,6 +50,13 @@ import {
 import {
   normalizeSalesNoteReschedulingReason,
 } from '../utils/salesNoteRescheduling'
+import type {
+  SalesNoteLoanSummary,
+} from '../types/salesNoteLoan'
+import {
+  resolveSalesNoteLoanSummary,
+} from '../utils/salesNoteLoan'
+
 
 function normalizeItems(
   items: readonly SalesNoteItem[],
@@ -172,6 +179,8 @@ type SalesNoteHistoryDocument = {
     deliveredAt: Timestamp | null
     deliveredBy: string | null
   }
+
+    loanSummary?: SalesNoteLoanSummary
 } & LegacySalesNote
 
 type SalesNoteDeliverySource = {
@@ -186,9 +195,14 @@ type SalesNoteDeliverySource = {
 
 type SalesNoteDetailDocument = Omit<
   SalesNoteDetail,
-  'id' | 'delivery' | 'payments'
+  | 'id'
+  | 'delivery'
+  | 'payments'
+  | 'loanSummary'
 > &
-  SalesNoteDeliverySource
+  SalesNoteDeliverySource & {
+    loanSummary?: SalesNoteLoanSummary
+  }
 
 export function resolveHistoryDelivery(
   note: SalesNoteDeliverySource,
@@ -472,6 +486,11 @@ export async function createSalesNote(
         deliveredBy: null,
       },
 
+      loanSummary: {
+        totalCount: 0,
+        activeCount: 0,
+      },
+
       notes: input.notes.trim(),
       cancellation: null,
 
@@ -481,6 +500,7 @@ export async function createSalesNote(
       updatedBy: userId,
       lastPaymentId: null,
       lastDeliveryScheduleChangeId: null,
+      lastLoanId: null,
     })
 
     input.payments.forEach(
@@ -808,9 +828,20 @@ export async function cancelSalesNote(
       )
     }
 
-    if (note.amounts.paidCents > 0) {
+        if (note.amounts.paidCents > 0) {
       throw new Error(
         'No se puede cancelar una nota con pagos registrados',
+      )
+    }
+
+    const loanSummary =
+      resolveSalesNoteLoanSummary(
+        note.loanSummary,
+      )
+
+    if (loanSummary.activeCount > 0) {
+      throw new Error(
+        'Devuelve todos los extintores prestados antes de cancelar la nota',
       )
     }
 
@@ -873,6 +904,10 @@ export async function getSalesNotesHistory(
       documentStatus: note.documentStatus,
       paymentStatus: note.paymentStatus,
       delivery: resolveHistoryDelivery(note),
+      loanSummary:
+        resolveSalesNoteLoanSummary(
+          note.loanSummary,
+        ),
     }
   })
 }
@@ -950,6 +985,10 @@ export async function getSalesNoteDetail(
     delivery: resolveHistoryDelivery(note),
     payments,
     deliveryScheduleChanges,
+    loanSummary:
+      resolveSalesNoteLoanSummary(
+        note.loanSummary,
+      ),
   }
 }
 

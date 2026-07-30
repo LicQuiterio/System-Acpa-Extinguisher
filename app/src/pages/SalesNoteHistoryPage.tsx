@@ -29,6 +29,11 @@ type DeliveryStatusFilter =
   | 'pending'
   | 'delivered'
 
+type LoanStatusFilter =
+  | 'all'
+  | 'active'
+  | 'none'
+
 const DOCUMENT_STATUS_LABELS = {
   issued: 'Emitida',
   cancelled: 'Cancelada',
@@ -118,6 +123,10 @@ export function SalesNotesHistoryPage() {
     deliveryStatus,
     setDeliveryStatus,
   ] = useState<DeliveryStatusFilter>('all')
+    const [
+    loanStatus,
+    setLoanStatus,
+  ] = useState<LoanStatusFilter>('all')
 
   async function loadHistory() {
     if (!member) {
@@ -189,11 +198,23 @@ export function SalesNotesHistoryPage() {
           deliveryStatus === 'all' ||
           note.delivery.status === deliveryStatus
 
+        const matchesLoanStatus =
+          loanStatus === 'all' ||
+          (
+            loanStatus === 'active' &&
+            note.loanSummary.activeCount > 0
+          ) ||
+          (
+            loanStatus === 'none' &&
+            note.loanSummary.activeCount === 0
+          )
+
         return (
           matchesSearch(note, search) &&
           matchesDocumentStatus &&
           matchesPaymentStatus &&
-          matchesDeliveryStatus
+          matchesDeliveryStatus &&
+          matchesLoanStatus
         )
       }),
     [
@@ -202,6 +223,7 @@ export function SalesNotesHistoryPage() {
       documentStatus,
       paymentStatus,
       deliveryStatus,
+      loanStatus,
     ],
   )
 
@@ -313,6 +335,31 @@ export function SalesNotesHistoryPage() {
           </option>
         </select>
 
+        <label htmlFor="sales-history-loan-status">
+          Estado de préstamos
+        </label>
+
+        <select
+          id="sales-history-loan-status"
+          value={loanStatus}
+          onChange={(event) =>
+            setLoanStatus(
+              event.target
+                .value as LoanStatusFilter,
+            )
+          }
+        >
+          <option value="all">
+            Todos
+          </option>
+          <option value="active">
+            Con préstamos activos
+          </option>
+          <option value="none">
+            Sin préstamos activos
+          </option>
+        </select>
+
         <button
           type="button"
           disabled={loading}
@@ -357,6 +404,7 @@ export function SalesNotesHistoryPage() {
                 <th>Saldo</th>
                 <th>Pago</th>
                 <th>Entrega</th>
+                <th>Préstamos</th>
               </tr>
             </thead>
 
@@ -415,6 +463,37 @@ export function SalesNotesHistoryPage() {
                             note.delivery.deliveredAt.toDate(),
                           )
                         : 'Fecha no disponible'}
+                  </td>
+                  <td>
+                    {note.loanSummary.activeCount > 0 ? (
+                      <>
+                        <strong>
+                          {note.loanSummary.activeCount}{' '}
+                          activo
+                          {note.loanSummary.activeCount === 1
+                            ? ''
+                            : 's'}
+                        </strong>
+                        <br />
+                        {note.loanSummary.totalCount}{' '}
+                        registrado
+                        {note.loanSummary.totalCount === 1
+                          ? ''
+                          : 's'}
+                      </>
+                    ) : note.loanSummary.totalCount > 0 ? (
+                      <>
+                        Sin préstamos activos
+                        <br />
+                        {note.loanSummary.totalCount}{' '}
+                        registrado
+                        {note.loanSummary.totalCount === 1
+                          ? ''
+                          : 's'}
+                      </>
+                    ) : (
+                      'Sin préstamos'
+                    )}
                   </td>
                 </tr>
               ))}

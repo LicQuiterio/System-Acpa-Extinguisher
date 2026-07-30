@@ -5,6 +5,9 @@ import type {
   ExtinguisherAgent,
   ExtinguisherService,
 } from '../constants/sales'
+import type {
+  SalesNoteLoanSummary,
+} from './salesNoteLoan'
 
 export type FolioMode = 'automatic' | 'manual'
 
@@ -59,6 +62,8 @@ export type SalesNoteHistoryItem = {
   documentStatus: DocumentStatus
   paymentStatus: PaymentStatus
   delivery: SalesNoteHistoryDelivery
+  loanSummary: SalesNoteLoanSummary
+
 }
 
 export type PaymentMethod = 'cash' | 'transfer' | 'card'
@@ -161,6 +166,7 @@ export type SalesNote = {
   documentStatus: DocumentStatus
   paymentStatus: PaymentStatus
   delivery: SalesNoteDelivery
+  loanSummary: SalesNoteLoanSummary
 
   notes: string
   cancellation: SalesNoteCancellation | null
@@ -171,6 +177,7 @@ export type SalesNote = {
   updatedBy: string
   lastPaymentId: string | null
   lastDeliveryScheduleChangeId: string | null
+  lastLoanId: string | null
 }
 
 export type Payment = {

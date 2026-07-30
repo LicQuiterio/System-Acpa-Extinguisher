@@ -31,6 +31,9 @@ import {
   canManageSalesNotes,
   canRescheduleSalesNoteDelivery,
 } from '../types/member'
+import {
+  SalesNoteLoansSection,
+} from '../components/salesNoteDetail/SalesNoteLoansSection'
 
 const DOCUMENT_STATUS_LABELS = {
   issued: 'Emitida',
@@ -851,6 +854,7 @@ async function handleCancelSalesNote(
   note.documentStatus === 'issued' &&
   note.amounts.paidCents === 0 &&
   note.delivery.status === 'pending' &&
+  note.loanSummary.activeCount === 0 &&
   !cancellationFormOpen && (
     <p>
       <button
@@ -881,6 +885,14 @@ async function handleCancelSalesNote(
     <p>
       Esta nota ya fue entregada y no puede
       cancelarse.
+    </p>
+  )}
+  {member.role === 'owner' &&
+  note.documentStatus === 'issued' &&
+  note.loanSummary.activeCount > 0 && (
+    <p>
+      Devuelve todos los extintores prestados
+      antes de cancelar la nota.
     </p>
   )}
 
@@ -1371,6 +1383,28 @@ async function handleCancelSalesNote(
               </table>
             )}
           </section>
+
+      <SalesNoteLoansSection
+            businessId={member.businessId}
+            noteId={noteId}
+            userId={user?.uid ?? null}
+            documentStatus={note.documentStatus}
+            canManage={canManageSalesNotes(
+              member.role,
+            )}
+            onLoanSummaryChange={(
+              loanSummary,
+            ) => {
+              setNote((currentNote) =>
+                currentNote
+                  ? {
+                      ...currentNote,
+                      loanSummary,
+                    }
+                  : currentNote,
+              )
+            }}
+          />
 
           <section>
             <h2>Entrega</h2>

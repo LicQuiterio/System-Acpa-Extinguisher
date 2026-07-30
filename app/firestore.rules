@@ -518,6 +518,17 @@ function validSalesNoteCancellation(data) {
 
   return resource.data.documentStatus == 'issued'
     && resource.data.amounts.paidCents == 0
+    && (
+      !resource.data.keys().hasAny([
+        'loanSummary'
+      ])
+      || (
+        validSalesNoteLoanSummary(
+          resource.data.loanSummary
+        )
+        && resource.data.loanSummary.activeCount == 0
+      )
+    )
     && deliveryWasPending
     && data.diff(resource.data)
       .affectedKeys()
@@ -581,7 +592,241 @@ function validSalesNoteCancellation(data) {
         );
     }
 
-    function validAutomaticSalesNote(
+ function validSalesNoteLoanSummary(summary) {
+  return summary is map
+    && summary.keys().hasOnly([
+      'totalCount',
+      'activeCount'
+    ])
+    && summary.totalCount is int
+    && summary.totalCount >= 0
+    && summary.activeCount is int
+    && summary.activeCount >= 0
+    && summary.activeCount <= summary.totalCount;
+}
+
+function currentSalesNoteLoanTotal(data) {
+  return data.keys().hasAny(['loanSummary'])
+    ? data.loanSummary.totalCount
+    : 0;
+}
+
+function currentSalesNoteActiveLoanCount(data) {
+  return data.keys().hasAny(['loanSummary'])
+    ? data.loanSummary.activeCount
+    : 0;
+}
+
+function validSalesNoteLoanRegistrationUpdate(
+  businessId,
+  noteId,
+  data
+) {
+  let loanId = data.lastLoanId;
+
+  let loan = getAfter(
+    /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(noteId)/loans/$(loanId)
+  ).data;
+
+  let normalizedCode =
+    loan.normalizedEquipmentCode;
+
+  let registry = getAfter(
+    /databases/$(database)/documents/businesses/$(businessId)/loanerCodeRegistry/$(normalizedCode)
+  ).data;
+
+  return resource.data.documentStatus == 'issued'
+    && data.diff(resource.data)
+      .affectedKeys()
+      .hasOnly([
+        'loanSummary',
+        'lastLoanId',
+        'updatedAt',
+        'updatedBy'
+      ])
+    && validSalesNoteLoanSummary(
+      data.loanSummary
+    )
+    && data.loanSummary.totalCount
+      == currentSalesNoteLoanTotal(
+        resource.data
+      ) + 1
+    && data.loanSummary.activeCount
+      == currentSalesNoteActiveLoanCount(
+        resource.data
+      ) + 1
+    && loanId is string
+    && loanId.size() > 0
+    && loan.status == 'active'
+    && loan.loanedAt == request.time
+    && loan.loanedBy == request.auth.uid
+    && registry.status == 'on_loan'
+    && registry.currentNoteId == noteId
+    && registry.currentLoanId == loanId
+    && registry.updatedAt == request.time
+    && registry.updatedBy == request.auth.uid
+    && data.updatedAt == request.time
+    && data.updatedBy == request.auth.uid;
+}
+
+function validSalesNoteLoanReturnUpdate(
+  businessId,
+  noteId,
+  data
+) {
+  let loanId = data.lastLoanId;
+
+  let previousLoan = get(
+    /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(noteId)/loans/$(loanId)
+  ).data;
+
+  let loan = getAfter(
+    /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(noteId)/loans/$(loanId)
+  ).data;
+
+  let normalizedCode =
+    loan.normalizedEquipmentCode;
+
+  let registry = getAfter(
+    /databases/$(database)/documents/businesses/$(businessId)/loanerCodeRegistry/$(normalizedCode)
+  ).data;
+
+  return data.diff(resource.data)
+    .affectedKeys()
+    .hasOnly([
+      'loanSummary',
+      'lastLoanId',
+      'updatedAt',
+      'updatedBy'
+    ])
+    && validSalesNoteLoanSummary(
+      resource.data.loanSummary
+    )
+    && validSalesNoteLoanSummary(
+      data.loanSummary
+    )
+    && resource.data.loanSummary.activeCount > 0
+    && data.loanSummary.totalCount
+      == resource.data.loanSummary.totalCount
+    && data.loanSummary.activeCount
+      == resource.data.loanSummary.activeCount - 1
+    && loanId is string
+    && loanId.size() > 0
+    && previousLoan.status == 'active'
+    && loan.status == 'returned'
+    && loan.returnedAt == request.time
+    && loan.returnedBy == request.auth.uid
+    && registry.status == 'available'
+    && registry.currentNoteId == null
+    && registry.currentLoanId == null
+    && registry.updatedAt == request.time
+    && registry.updatedBy == request.auth.uid
+    && data.updatedAt == request.time
+    && data.updatedBy == request.auth.uid;
+}
+
+function validSalesNoteLoanCreationData(data) {
+  return data.keys().hasOnly([
+      'equipmentCode',
+      'normalizedEquipmentCode',
+      'reason',
+      'agent',
+      'capacityValue',
+      'capacityUnit',
+      'outgoingCondition',
+      'status',
+      'loanedAt',
+      'loanedBy',
+      'returnedAt',
+      'returnedBy',
+      'returnNotes'
+    ])
+    && data.equipmentCode is string
+    && data.equipmentCode.size() > 0
+    && data.equipmentCode.size() <= 40
+    && data.normalizedEquipmentCode
+      == data.equipmentCode
+    && data.normalizedEquipmentCode.matches(
+      '[A-Z0-9]+(-[A-Z0-9]+)*'
+    )
+    && data.reason in [
+      'recharge',
+      'preventive_maintenance',
+      'hydrostatic_test',
+      'waiting_for_new_extinguisher',
+      'other'
+    ]
+    && data.agent in [
+      'co2',
+      'pqs',
+      'pressurized_water',
+      'afff',
+      'clean_agent'
+    ]
+    && (
+      data.capacityValue is int
+      || data.capacityValue is float
+    )
+    && data.capacityValue > 0
+    && data.capacityUnit in [
+      'kg',
+      'l',
+      'lb'
+    ]
+    && data.outgoingCondition is string
+    && data.outgoingCondition.size() > 0
+    && data.outgoingCondition.size() <= 500
+    && data.status == 'active'
+    && data.loanedAt == request.time
+    && data.loanedBy == request.auth.uid
+    && data.returnedAt == null
+    && data.returnedBy == null
+    && data.returnNotes == '';
+}
+
+function validSalesNoteLoanReturnData(data) {
+  return resource.data.status == 'active'
+    && data.diff(resource.data)
+      .affectedKeys()
+      .hasOnly([
+        'status',
+        'returnedAt',
+        'returnedBy',
+        'returnNotes'
+      ])
+    && data.status == 'returned'
+    && data.returnedAt == request.time
+    && data.returnedBy == request.auth.uid
+    && data.returnNotes is string
+    && data.returnNotes.size() <= 500;
+}
+
+function validLoanerCodeRegistryData(
+  data,
+  normalizedCode
+) {
+  return data.keys().hasOnly([
+      'equipmentCode',
+      'status',
+      'currentNoteId',
+      'currentLoanId',
+      'updatedAt',
+      'updatedBy'
+    ])
+    && data.equipmentCode == normalizedCode
+    && normalizedCode.matches(
+      '[A-Z0-9]+(-[A-Z0-9]+)*'
+    )
+    && normalizedCode.size() <= 40
+    && data.status in [
+      'available',
+      'on_loan'
+    ]
+    && data.updatedAt == request.time
+    && data.updatedBy == request.auth.uid;
+}
+
+  function validAutomaticSalesNote(
       businessId,
       noteId,
       data
@@ -600,6 +845,7 @@ function validSalesNoteCancellation(data) {
           'documentStatus',
           'paymentStatus',
           'delivery',
+          'loanSummary',
           'notes',
           'cancellation',
           'createdAt',
@@ -607,7 +853,8 @@ function validSalesNoteCancellation(data) {
           'createdBy',
           'updatedBy',
           'lastPaymentId',
-          'lastDeliveryScheduleChangeId'
+          'lastDeliveryScheduleChangeId',
+          'lastLoanId'
         ])
         && data.folioNumber is int
         && data.folioNumber >= 0
@@ -628,6 +875,7 @@ function validSalesNoteCancellation(data) {
         && data.documentStatus == 'issued'
         && validPaymentStatus(data)
         && validSalesNoteDelivery(data)
+        && validSalesNoteLoanSummary(data.loanSummary)
         && data.notes is string
         && data.notes.size() <= 2000
         && data.cancellation == null
@@ -637,6 +885,7 @@ function validSalesNoteCancellation(data) {
         && data.updatedBy == request.auth.uid
         && data.lastPaymentId == null
         && data.lastDeliveryScheduleChangeId == null
+        && data.lastLoanId == null
         && getAfter(
           /databases/$(database)/documents/businesses/$(businessId)/counters/salesNotes
         ).data.nextNumber
@@ -847,7 +1096,7 @@ function technicianUpdatesServiceDates(businessId) {
         allow delete: if false;
       }
 
-            match /counters/salesNotes {
+      match /counters/salesNotes {
         allow read: if isActiveMember(businessId);
 
         allow create: if canManageSalesData(businessId)
@@ -898,7 +1147,7 @@ function technicianUpdatesServiceDates(businessId) {
         allow delete: if false;
       }
 
-            match /salesNotes/{noteId} {
+      match /salesNotes/{noteId} {
         allow read: if isActiveMember(businessId);
 
         allow create: if canManageSalesData(businessId)
@@ -911,12 +1160,22 @@ function technicianUpdatesServiceDates(businessId) {
             allow update: if (
     canManageSalesData(businessId)
     && (
-      validAdditionalPaymentUpdate(
+            validAdditionalPaymentUpdate(
         businessId,
         noteId,
         request.resource.data
       )
       || validDeliveryCompletion(
+        request.resource.data
+      )
+      || validSalesNoteLoanRegistrationUpdate(
+        businessId,
+        noteId,
+        request.resource.data
+      )
+      || validSalesNoteLoanReturnUpdate(
+        businessId,
+        noteId,
         request.resource.data
       )
     )
@@ -996,6 +1255,65 @@ function technicianUpdatesServiceDates(businessId) {
           allow update, delete: if false;
         }
 
+        match /loans/{loanId} {
+          allow read: if isActiveMember(businessId);
+
+          allow create: if (
+            canManageSalesData(businessId)
+            && validSalesNoteLoanCreationData(
+              request.resource.data
+            )
+            && get(
+              /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(noteId)
+            ).data.documentStatus == 'issued'
+            && getAfter(
+              /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(noteId)
+            ).data.lastLoanId == loanId
+            && getAfter(
+              /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(noteId)
+            ).data.updatedAt == request.time
+            && getAfter(
+              /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(noteId)
+            ).data.updatedBy == request.auth.uid
+            && getAfter(
+              /databases/$(database)/documents/businesses/$(businessId)/loanerCodeRegistry/$(request.resource.data.normalizedEquipmentCode)
+            ).data.status == 'on_loan'
+            && getAfter(
+              /databases/$(database)/documents/businesses/$(businessId)/loanerCodeRegistry/$(request.resource.data.normalizedEquipmentCode)
+            ).data.currentNoteId == noteId
+            && getAfter(
+              /databases/$(database)/documents/businesses/$(businessId)/loanerCodeRegistry/$(request.resource.data.normalizedEquipmentCode)
+            ).data.currentLoanId == loanId
+          );
+
+          allow update: if (
+            canManageSalesData(businessId)
+            && validSalesNoteLoanReturnData(
+              request.resource.data
+            )
+            && getAfter(
+              /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(noteId)
+            ).data.lastLoanId == loanId
+            && getAfter(
+              /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(noteId)
+            ).data.updatedAt == request.time
+            && getAfter(
+              /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(noteId)
+            ).data.updatedBy == request.auth.uid
+            && getAfter(
+              /databases/$(database)/documents/businesses/$(businessId)/loanerCodeRegistry/$(resource.data.normalizedEquipmentCode)
+            ).data.status == 'available'
+            && getAfter(
+              /databases/$(database)/documents/businesses/$(businessId)/loanerCodeRegistry/$(resource.data.normalizedEquipmentCode)
+            ).data.currentNoteId == null
+            && getAfter(
+              /databases/$(database)/documents/businesses/$(businessId)/loanerCodeRegistry/$(resource.data.normalizedEquipmentCode)
+            ).data.currentLoanId == null
+          );
+
+          allow delete: if false;
+        }
+
         match /payments/{paymentId} {
           allow read: if isActiveMember(businessId);
 
@@ -1039,6 +1357,89 @@ function technicianUpdatesServiceDates(businessId) {
 
           allow update, delete: if false;
         }
+      }
+
+      match /loanerCodeRegistry/{normalizedCode} {
+        allow read: if canManageSalesData(businessId);
+
+        allow create: if (
+          canManageSalesData(businessId)
+          && validLoanerCodeRegistryData(
+            request.resource.data,
+            normalizedCode
+          )
+          && request.resource.data.status
+            == 'on_loan'
+          && request.resource.data.currentNoteId
+            is string
+          && request.resource.data.currentNoteId
+            .size() > 0
+          && request.resource.data.currentLoanId
+            is string
+          && request.resource.data.currentLoanId
+            .size() > 0
+          && getAfter(
+            /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(request.resource.data.currentNoteId)/loans/$(request.resource.data.currentLoanId)
+          ).data.status == 'active'
+          && getAfter(
+            /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(request.resource.data.currentNoteId)/loans/$(request.resource.data.currentLoanId)
+          ).data.normalizedEquipmentCode
+            == normalizedCode
+          && getAfter(
+            /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(request.resource.data.currentNoteId)
+          ).data.lastLoanId
+            == request.resource.data.currentLoanId
+        );
+
+        allow update: if (
+          canManageSalesData(businessId)
+          && validLoanerCodeRegistryData(
+            request.resource.data,
+            normalizedCode
+          )
+          && (
+            (
+              resource.data.status == 'available'
+              && resource.data.currentNoteId == null
+              && resource.data.currentLoanId == null
+              && request.resource.data.status
+                == 'on_loan'
+              && request.resource.data.currentNoteId
+                is string
+              && request.resource.data.currentLoanId
+                is string
+              && getAfter(
+                /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(request.resource.data.currentNoteId)/loans/$(request.resource.data.currentLoanId)
+              ).data.status == 'active'
+              && getAfter(
+                /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(request.resource.data.currentNoteId)/loans/$(request.resource.data.currentLoanId)
+              ).data.normalizedEquipmentCode
+                == normalizedCode
+              && getAfter(
+                /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(request.resource.data.currentNoteId)
+              ).data.lastLoanId
+                == request.resource.data.currentLoanId
+            )
+            || (
+              resource.data.status == 'on_loan'
+              && request.resource.data.status
+                == 'available'
+              && request.resource.data.currentNoteId
+                == null
+              && request.resource.data.currentLoanId
+                == null
+              && getAfter(
+                /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(resource.data.currentNoteId)/loans/$(resource.data.currentLoanId)
+              ).data.status == 'returned'
+              && getAfter(
+                /databases/$(database)/documents/businesses/$(businessId)/salesNotes/$(resource.data.currentNoteId)
+              ).data.lastLoanId
+                == resource.data.currentLoanId
+            )
+          )
+        );
+
+        allow delete: if false;
       }
 
       match /serviceAreas/{serviceAreaId} {
@@ -1099,7 +1500,7 @@ function technicianUpdatesServiceDates(businessId) {
   	allow delete: if false;
       }
 	
-	match /maintenances/{maintenanceId} {
+match /maintenances/{maintenanceId} {
   allow read: if isActiveMember(businessId);
 
 allow create: if (
@@ -1283,14 +1684,10 @@ match /serviceVisits/{serviceVisitId} {
 
   allow delete: if false;
 }
-
-
     match /{document=**} {
         allow read: if isActiveMember(businessId);
 	allow write: if false;
 	}
-    
-
     }
   }
 }
