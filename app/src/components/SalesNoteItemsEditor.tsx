@@ -19,6 +19,7 @@ import {
   createExtinguisherItemDraft,
   createGeneralProductItemDraft,
 } from '../utils/salesNoteDraft'
+import { SalesNoteItemActions } from './salesNote/SalesNoteItemActions'
 
 type SalesNoteItemsEditorProps = {
   items: SalesNoteItemDraft[]
@@ -340,32 +341,21 @@ export function SalesNoteItemsEditor({
           ),
         )}
       </datalist>
-
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() =>
-          onChange([
-            ...items,
-            createExtinguisherItemDraft(),
-          ])
-        }
-      >
-        + Agregar servicio de extintor
-      </button>
-
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() =>
-          onChange([
-            ...items,
-            createGeneralProductItemDraft(),
-          ])
-        }
-      >
-        + Agregar otro producto
-      </button>
+        <SalesNoteItemActions
+          disabled={disabled}
+          onAddExtinguisherService={() =>
+            onChange([
+              ...items,
+              createExtinguisherItemDraft(),
+            ])
+          }
+          onAddGeneralProduct={() =>
+            onChange([
+              ...items,
+              createGeneralProductItemDraft(),
+            ])
+          }
+        />
     </section>
   )
 }

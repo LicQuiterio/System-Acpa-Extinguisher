@@ -34,6 +34,8 @@ import {
 import {
   SalesNoteLoansSection,
 } from '../components/salesNoteDetail/SalesNoteLoansSection'
+import { getSalesNoteLoans } from '../services/salesNoteLoanService'
+import type { SalesNoteLoan } from '../types/salesNoteLoan'
 
 const DOCUMENT_STATUS_LABELS = {
   issued: 'Emitida',
@@ -234,6 +236,8 @@ export function SalesNoteDetailPage() {
   const [error, setError] = useState('')
     const [printableNote, setPrintableNote] =
     useState<SalesNoteDetail | null>(null)
+  const [printableLoans, setPrintableLoans] =
+    useState<SalesNoteLoan[]>([])
 
   const [preparingPrint, setPreparingPrint] =
     useState(false)
@@ -411,6 +415,7 @@ const [cancellationMessage, setCancellationMessage] =
       } finally {
         if (!cancelled) {
           setPrintableNote(null)
+          setPrintableLoans([])
           setPreparingPrint(false)
         }
       }
@@ -423,14 +428,35 @@ const [cancellationMessage, setCancellationMessage] =
     }
   }, [printableNote])
 
-      function handlePrintNote() {
-    if (!note || preparingPrint) {
+  async function handlePrintNote() {
+    if (
+      !note ||
+      !member ||
+      !noteId ||
+      preparingPrint
+    ) {
       return
     }
 
     setPrintError('')
     setPreparingPrint(true)
-    setPrintableNote(note)
+
+    try {
+      const loans = await getSalesNoteLoans(
+        member.businessId,
+        noteId,
+      )
+
+      setPrintableLoans(loans)
+      setPrintableNote(note)
+    } catch (caughtError) {
+      setPrintError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'No fue posible cargar los préstamos de la nota.',
+      )
+      setPreparingPrint(false)
+    }
   }
 
     function closePaymentForm() {
@@ -1768,6 +1794,7 @@ async function handleCancelSalesNote(
               printableNote.delivery,
             cancellation:
               printableNote.cancellation,
+            loans: printableLoans,
           }}
         />
       )}

@@ -464,9 +464,10 @@
   }
 
   .quotation-summary {
-    grid-template-columns: 1fr 62mm;
-    gap: 8mm;
-  }
+  grid-template-columns: 1fr 62mm;
+  gap: 6mm;
+  padding: 2.5mm 3mm;
+}
 
   .quotation-terms {
     font-size: 7.5pt;
@@ -478,22 +479,24 @@
   }
 
   .quotation-terms dl > div {
-    grid-template-columns: 30mm 1fr;
-    margin-bottom: 0.6mm;
-  }
+  grid-template-columns: 27mm 1fr;
+  gap: 1.5mm;
+  margin-bottom: 0.4mm;
+}
 
   .quotation-terms ul {
-    columns: 2;
-    column-gap: 6mm;
-    margin-top: 2mm;
-    padding-left: 4mm;
-    font-size: 6.5pt;
-  }
+  columns: 2;
+  column-gap: 5mm;
+  margin: 1mm 0 0;
+  padding-left: 4mm;
+  font-size: 6.5pt;
+  line-height: 1.2;
+}
 
-  .quotation-terms li {
-    margin-bottom: 0.5mm;
-    break-inside: avoid;
-  }
+.quotation-terms li {
+  margin-bottom: 0.3mm;
+  break-inside: avoid;
+}
 
   .quotation-totals dl > div {
     padding: 1mm 2.5mm;
@@ -649,8 +652,15 @@
     page-break-inside: avoid;
   }
 
+  .quotation-loans {
+  margin-top: 3mm;
+  padding: 2.5mm 3mm;
+  break-inside: auto;
+  page-break-inside: auto;
+}
   .quotation-payments h2,
-  .quotation-cancellation h2 {
+  .quotation-cancellation h2,
+  .quotation-loans h2 {
     margin: 0 0 1.5mm;
     font-size: 8.5pt;
   }
@@ -665,6 +675,82 @@
     width: 100%;
     border-collapse: collapse;
     font-size: 7.5pt;
+  }
+
+  .quotation-loans h2,
+.quotation-loans-legend {
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+.quotation-loans-legend {
+  margin: 0 0 1.5mm;
+  color: #555;
+  font-size: 6.5pt;
+  line-height: 1.2;
+}
+
+  .quotation-loans table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 6.5pt;
+  }
+
+  .quotation-loans thead {
+    display: table-header-group;
+  }
+
+  .quotation-loans tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .quotation-loans th,
+.quotation-loans td {
+  padding: 0.9mm 1.1mm;
+  border-bottom: 0.25mm solid #ddd;
+  vertical-align: top;
+  font-size: 6.5pt;
+  line-height: 1.2;
+  overflow-wrap: break-word;
+}
+
+  .quotation-loans th {
+    background: #f1e2e3;
+    color: #64151a;
+    font-size: 6pt;
+    text-align: left;
+    text-transform: uppercase;
+  }
+
+  .quotation-loans th:first-child {
+    width: 12%;
+  }
+
+  .quotation-loans th:nth-child(2) {
+    width: 15%;
+  }
+
+  .quotation-loans td:nth-child(6) {
+  white-space: nowrap;
+}
+
+  .quotation-loans th:nth-child(3) {
+    width: 14%;
+  }
+
+  .quotation-loans th:nth-child(4) {
+    width: 18%;
+  }
+
+  .quotation-loans th:nth-child(5),
+  .quotation-loans th:nth-child(7) {
+    width: 14%;
+  }
+
+  .quotation-loans th:nth-child(6) {
+    width: 9%;
   }
 
   .quotation-payments th,

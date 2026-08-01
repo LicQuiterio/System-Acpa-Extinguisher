@@ -6,6 +6,7 @@ import {
   DEFAULT_SALES_TERMS,
   QUOTATION_VALIDITY,
 } from '../../constants/salesSettings'
+import { SALES_NOTE_LOAN_REASONS } from '../../constants/salesNoteLoans'
 import { ACPA_QUOTATION_SETTINGS } from '../../constants/quotationSettings'
 import type { SalesClient } from '../../types/client'
 import type {
@@ -18,6 +19,7 @@ import type {
   SalesNoteItem,
   SalesNoteTerms,
 } from '../../types/salesNote'
+import type { SalesNoteLoan } from '../../types/salesNoteLoan'
 import { formatAmountInWords } from '../../utils/amountInWords'
 import { formatMoneyFromCents } from '../../utils/money'
 import '../../styles/print/SalesQuotationPrint.css'
@@ -39,6 +41,7 @@ export type RegisteredSalesNotePrintData = {
   payments: Payment[]
   delivery: SalesNoteHistoryDelivery
   cancellation: SalesNoteCancellation | null
+  loans: SalesNoteLoan[]
 }
 
 type SalesQuotationPrintProps = {
@@ -50,6 +53,7 @@ type SalesQuotationPrintProps = {
   scheduledDeliveryDate: string | null
   notes: string
   terms?: SalesNoteTerms
+  includePlannedLoanCondition?: boolean
   registeredNote?: RegisteredSalesNotePrintData
 }
 
@@ -194,6 +198,7 @@ export function SalesQuotationPrint({
   scheduledDeliveryDate,
   notes,
   registeredNote,
+  includePlannedLoanCondition = false,
   terms = DEFAULT_SALES_TERMS,
 }: SalesQuotationPrintProps) {
   const settings = ACPA_QUOTATION_SETTINGS
@@ -280,6 +285,14 @@ export function SalesQuotationPrint({
                   <dt>Vigencia</dt>
                   <dd>{QUOTATION_VALIDITY}</dd>
                 </div>
+              )}
+
+              {!registeredNote &&
+                formattedDeliveryDate && (
+                  <div>
+                    <dt>Entrega</dt>
+                    <dd>{formattedDeliveryDate}</dd>
+                  </div>
               )}
             </dl>
           </div>
@@ -375,22 +388,23 @@ export function SalesQuotationPrint({
                     <dd>{QUOTATION_VALIDITY}</dd>
                   </div>
                 )}
-              <div>
-                <dt>Tiempo de entrega</dt>
-                <dd>{terms.deliveryTime}</dd>
-              </div>
-
-              {formattedDeliveryDate && (
-                <div>
-                  <dt>Entrega programada</dt>
-                  <dd>{formattedDeliveryDate}</dd>
-                </div>
-              )}
 
               <div>
                 <dt>Garantía</dt>
                 <dd>{terms.warranty}</dd>
               </div>
+
+              {!registeredNote &&
+              includePlannedLoanCondition && (
+                <div>
+                  <dt>Préstamo temporal</dt>
+                  <dd>
+                    Se proporcionará un extintor en
+                    préstamo durante la realización del
+                    servicio, sujeto a disponibilidad.
+                  </dd>
+                </div>
+              )}
 
               {terms.additionalCondition && (
                 <div>
@@ -520,12 +534,93 @@ export function SalesQuotationPrint({
               </div>
 
               <div>
-                <span>Fecha real de entrega</span>
+                <span>
+                  {registeredNote.delivery.status ===
+                  'delivered'
+                    ? 'Fecha real de entrega'
+                    : 'Entrega programada'}
+                </span>
+                  
                 <strong>
-                  {deliveredAt ?? 'No registrada'}
+                  {deliveredAt ??
+                    formattedDeliveryDate ??
+                    'No registrada'}
                 </strong>
               </div>
             </section>
+
+            {registeredNote.loans.length > 0 && (
+              <section className="quotation-loans">
+                <h2>Extintores en préstamo</h2>
+
+                <p className="quotation-loans-legend">
+                  Equipo propiedad de ACPA Extintores,
+                  entregado temporalmente al cliente y
+                  sujeto a devolución.
+                </p>
+
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Código</th>
+                      <th>Motivo</th>
+                      <th>Agente y capacidad</th>
+                      <th>Condición de salida</th>
+                      <th>Fecha de préstamo</th>
+                      <th>Estado</th>
+                      <th>Fecha de devolución</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {registeredNote.loans.map(
+                      (loan) => (
+                        <tr key={loan.id}>
+                          <td>{loan.equipmentCode}</td>
+                          <td>
+                            {getOptionLabel(
+                              SALES_NOTE_LOAN_REASONS,
+                              loan.reason,
+                            )}
+                          </td>
+                          <td>
+                            {getOptionLabel(
+                              EXTINGUISHER_AGENTS,
+                              loan.agent,
+                            )}
+                            {' · '}
+                            {loan.capacityValue}{' '}
+                            {loan.capacityUnit}
+                          </td>
+                          <td>
+                            {loan.outgoingCondition}
+                          </td>
+                          <td>
+                            {DATE_TIME_FORMATTER.format(
+                              loan.loanedAt.toDate(),
+                            )}
+                          </td>
+                          <td>
+                            <strong>
+                              {loan.status === 'active'
+                                ? 'Prestado'
+                                : 'Devuelto'}
+                            </strong>
+                          </td>
+                          <td>
+                            {loan.returnedAt
+                              ? DATE_TIME_FORMATTER.format(
+                                  loan.returnedAt.toDate(),
+                                )
+                              : 'Pendiente'}
+                          </td>
+                        </tr>
+                      ),
+                    )}
+                  </tbody>
+                </table>
+              </section>
+            )}
 
             <section className="quotation-payments">
               <h2>Pagos registrados</h2>

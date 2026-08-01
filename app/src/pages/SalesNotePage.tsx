@@ -54,6 +54,7 @@ type PrintableQuotation = {
   amounts: SalesQuotationPrintAmounts
   scheduledDeliveryDate: string | null
   notes: string
+  includePlannedLoanCondition: boolean
 }
 
 function waitForPrintableImage(
@@ -153,6 +154,10 @@ export function SalesNotePage() {
     setApplyResicoWithholding,
   ] = useState(false)
   const [notes, setNotes] = useState('')
+  const [
+  includePlannedLoanCondition,
+  setIncludePlannedLoanCondition,
+] = useState(false)
   const [loadingClients, setLoadingClients] =
     useState(true)
   const [error, setError] = useState('')
@@ -361,6 +366,7 @@ const [
     setApplyVat(false)
     setApplyResicoWithholding(false)
     setNotes('')
+    setIncludePlannedLoanCondition(false)
     setError('')
     setMessage('')
     setCreatedNote(null)
@@ -385,6 +391,7 @@ const [
       applyVat ||
       applyResicoWithholding ||
       notes.trim() !== '' ||
+      includePlannedLoanCondition ||
       delivery.status !== 'pending' || 
       delivery.scheduledDate !== ''
       
@@ -522,6 +529,7 @@ const [
       scheduledDeliveryDate:
         delivery.scheduledDate,
       notes,
+      includePlannedLoanCondition,
     })
   } catch (caughtError) {
     setError(
@@ -629,7 +637,7 @@ const [
           </strong>
         </p>
 
-        <label>
+        <label className="checkbox-control">
           <input
             type="checkbox"
             checked={applyVat}
@@ -648,7 +656,7 @@ const [
           )}
         </p>
 
-        <label>
+        <label className="checkbox-control">
           <input
             type="checkbox"
             checked={applyResicoWithholding}
@@ -874,6 +882,29 @@ const [
             setNotes(event.target.value)
           }
         />
+        <label className="checkbox-control">
+          <input
+            type="checkbox"
+            checked={includePlannedLoanCondition}
+            disabled={formLocked}
+            onChange={(event) => {
+              setIncludePlannedLoanCondition(
+                event.target.checked,
+              )
+              setError('')
+              setMessage('')
+            }}
+          />
+
+          Incluir condición de extintor en préstamo
+          en la cotización
+        </label>
+          
+        <p>
+          Esta condición solamente aparecerá en la
+          cotización temporal. No registra ni reserva
+          un equipo.
+        </p>
       </section>
 
       {error && <p role="alert">{error}</p>}
