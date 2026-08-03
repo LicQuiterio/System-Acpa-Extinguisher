@@ -1,15 +1,20 @@
 import {
   useEffect,
+  useCallback,
   useMemo,
   useState,
 } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { SalesNoteItemsEditor } from '../components/SalesNoteItemsEditor'
+import { WhatsAppClientLink } from '../components/WhatsAppClientLink'
 import {
   SalesQuotationPrint,
   type SalesQuotationPrintAmounts,
 } from '../components/print/SalesQuotationPrint'
+import {
+  SalesDocumentPrint,
+} from '../components/print/SalesDocumentPrint'
 import { getSalesClients } from '../services/salesClientService'
 import type {
   CreateSalesNoteResult,
@@ -19,7 +24,10 @@ import type {
   SalesNoteItem,
 } from '../types/salesNote'
 import type { SalesNoteItemDraft } from '../types/salesNoteDraft'
-import type { SalesClient } from '../types/client'
+import {
+  getSalesClientDisplayName,
+  type SalesClient,
+} from '../types/client'
 import {
   formatMoneyFromCents,
   parseMoneyToCents,
@@ -57,68 +65,6 @@ type PrintableQuotation = {
   includePlannedLoanCondition: boolean
 }
 
-function waitForPrintableImage(
-  image: HTMLImageElement,
-): Promise<void> {
-  if (image.complete) {
-    return image.naturalWidth > 0
-      ? Promise.resolve()
-      : Promise.reject(
-          new Error(
-            'No fue posible cargar una imagen de la cotización',
-          ),
-        )
-  }
-
-  return new Promise((resolve, reject) => {
-    const handleLoad = () => {
-      cleanup()
-      resolve()
-    }
-
-    const handleError = () => {
-      cleanup()
-      reject(
-        new Error(
-          'No fue posible cargar una imagen de la cotización',
-        ),
-      )
-    }
-
-    const cleanup = () => {
-      image.removeEventListener(
-        'load',
-        handleLoad,
-      )
-      image.removeEventListener(
-        'error',
-        handleError,
-      )
-    }
-
-    image.addEventListener(
-      'load',
-      handleLoad,
-      { once: true },
-    )
-
-    image.addEventListener(
-      'error',
-      handleError,
-      { once: true },
-    )
-  })
-}
-
-function waitForPrintLayout(): Promise<void> {
-  return new Promise((resolve) => {
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => {
-        resolve()
-      })
-    })
-  })
-}
 
 function createPaymentDraft(): PaymentDraft {
   return {
@@ -170,6 +116,8 @@ export function SalesNotePage() {
   setPrintableQuotation,
 ] = useState<PrintableQuotation | null>(null)
 
+
+
 const [
   preparingQuotation,
   setPreparingQuotation,
@@ -179,6 +127,19 @@ const [
     status: 'pending',
     scheduledDate: '',
   })
+
+  const handleQuotationDocumentFinished =
+  useCallback(
+    (documentError: string | null) => {
+      if (documentError) {
+        setError(documentError)
+      }
+
+      setPrintableQuotation(null)
+      setPreparingQuotation(false)
+    },
+    [],
+  )
 
   const formLocked =
   saving ||
@@ -219,55 +180,6 @@ const [
     }
   }, [member])
 
-  useEffect(() => {
-  if (!printableQuotation) {
-    return
-  }
-
-  let cancelled = false
-
-  async function openPrintDialog() {
-    try {
-      const printableImages = Array.from(
-        document.querySelectorAll<HTMLImageElement>(
-          '.quotation-print-area img',
-        ),
-      )
-
-      await Promise.all(
-        printableImages.map(
-          waitForPrintableImage,
-        ),
-      )
-
-      await waitForPrintLayout()
-
-      if (cancelled) {
-        return
-      }
-
-      window.print()
-    } catch (caughtError) {
-      if (!cancelled) {
-        setError(
-          caughtError instanceof Error
-            ? caughtError.message
-            : 'No fue posible preparar las imágenes de la cotización',
-        )
-      }
-    } finally {
-      if (!cancelled) {
-        setPrintableQuotation(null)
-      }
-    }
-  }
-
-  void openPrintDialog()
-
-  return () => {
-    cancelled = true
-  }
-}, [printableQuotation])
 
   const selectedClient = useMemo(
     () =>
@@ -532,14 +444,13 @@ const [
       includePlannedLoanCondition,
     })
   } catch (caughtError) {
-    setError(
-      caughtError instanceof Error
-        ? caughtError.message
-        : 'No fue posible preparar la cotización',
-    )
-  } finally {
-    setPreparingQuotation(false)
-  }
+  setError(
+    caughtError instanceof Error
+      ? caughtError.message
+      : 'No fue posible preparar la cotización',
+  )
+  setPreparingQuotation(false)
+}
 }
 
   if (!member) {
@@ -929,8 +840,8 @@ const [
           }
         >
           {preparingQuotation
-            ? 'Preparando cotización...'
-            : 'Imprimir cotización temporal'}
+              ? 'Preparando cotización...'
+              : 'Imprimir cotización temporal'}
         </button>
 
         <button
@@ -943,14 +854,28 @@ const [
             : createdNote
               ? `Nota ${createdNote.folioDisplay} registrada`
               : 'Registrar nota'}
-        </button>
-        
-            </footer>
-
-      {printableQuotation && (
-        <SalesQuotationPrint
-          {...printableQuotation}
+         </button>
+      </footer>
+      
+      {selectedClient && (
+        <WhatsAppClientLink
+          phone={selectedClient.phone}
+          message={
+            `Hola ${getSalesClientDisplayName(selectedClient)}, ` +
+            'te comparto la cotización de ACPA Extintores.'
+          }
         />
+      )}
+      {printableQuotation && (
+        <SalesDocumentPrint
+          onFinished={
+            handleQuotationDocumentFinished
+          }
+        >
+          <SalesQuotationPrint
+            {...printableQuotation}
+          />
+        </SalesDocumentPrint>
       )}
     </main>
   )
