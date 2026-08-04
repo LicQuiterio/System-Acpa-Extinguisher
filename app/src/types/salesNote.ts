@@ -184,6 +184,7 @@ export type Payment = {
   id: string
   amountCents: number
   method: PaymentMethod
+  cashMovementId: string
   paidAt: Timestamp
   createdAt: Timestamp
   createdBy: string

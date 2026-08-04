@@ -150,6 +150,33 @@ export function DashboardPage() {
               →
             </span>
           </Link>
+
+          <Link
+            className="dashboard-action-card"
+            to="/cash"
+          >
+            <span
+              className="dashboard-action-number"
+              aria-hidden="true"
+            >
+              04
+            </span>
+
+            <div>
+              <h3>Corte de caja</h3>
+              <p>
+                Consulta ingresos y registra gastos o
+                retiros del día.
+              </p>
+            </div>
+
+            <span
+              className="dashboard-action-arrow"
+              aria-hidden="true"
+            >
+              →
+            </span>
+          </Link>
         </div>
       </section>
 

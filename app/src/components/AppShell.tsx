@@ -64,6 +64,13 @@ export function AppShell() {
           >
             Clientes
           </NavLink>
+
+          <NavLink
+            to="/cash"
+            className={getNavigationClass}
+          >
+            Caja
+          </NavLink>
         </nav>
 
         <div className="app-user">

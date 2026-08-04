@@ -56,6 +56,7 @@ import type {
 import {
   resolveSalesNoteLoanSummary,
 } from '../utils/salesNoteLoan'
+import { getBusinessDate } from '../utils/cashMovement'
 
 
 function normalizeItems(
@@ -288,9 +289,9 @@ export async function createSalesNote(
     throw new Error('El cliente es obligatorio')
   }
 
-  if (input.payments.length > 50) {
+  if (input.payments.length > 5) {
     throw new Error(
-      'La nota no puede contener más de 50 pagos iniciales',
+      'La nota no puede contener más de 5 pagos iniciales',
     )
   }
 
@@ -360,6 +361,20 @@ export async function createSalesNote(
         ),
       ),
   )
+
+  const cashMovementReferences = input.payments.map(
+    () =>
+      doc(
+        collection(
+          db,
+          'businesses',
+          businessId,
+          'cashMovements',
+        ),
+      ),
+  )
+
+  const businessDate = getBusinessDate()
 
   return runTransaction(db, async (transaction) => {
     const clientSnapshot =
@@ -505,17 +520,41 @@ export async function createSalesNote(
 
     input.payments.forEach(
       (payment, index) => {
+        const paymentReference = paymentReferences[index]
+        const cashMovementReference =
+          cashMovementReferences[index]
+
         transaction.set(
-          paymentReferences[index],
+          paymentReference,
           {
             amountCents: payment.amountCents,
             method: payment.method,
+            cashMovementId: cashMovementReference.id,
             paidAt: serverTimestamp(),
             createdAt: serverTimestamp(),
             createdBy: userId,
             active: true,
           },
         )
+
+        transaction.set(cashMovementReference, {
+          businessDate,
+          type: 'income',
+          source: 'sales_payment',
+          amountCents: payment.amountCents,
+          paymentMethod: payment.method,
+          concept: `Cobro nota ${folioDisplay} - ${
+            client.companyName || client.contactName
+          }`,
+          quantity: 1,
+          observations: '',
+          noteId: noteReference.id,
+          folioDisplay,
+          paymentId: paymentReference.id,
+          occurredAt: serverTimestamp(),
+          createdAt: serverTimestamp(),
+          createdBy: userId,
+        })
       },
     )
 
@@ -567,6 +606,17 @@ export async function registerSalesNotePayment(
     collection(noteReference, 'payments'),
   )
 
+  const cashMovementReference = doc(
+    collection(
+      db,
+      'businesses',
+      businessId,
+      'cashMovements',
+    ),
+  )
+
+  const businessDate = getBusinessDate()
+
   return runTransaction(db, async (transaction) => {
     const noteSnapshot =
       await transaction.get(noteReference)
@@ -603,10 +653,31 @@ export async function registerSalesNotePayment(
     transaction.set(paymentReference, {
       amountCents: payment.amountCents,
       method: payment.method,
+      cashMovementId: cashMovementReference.id,
       paidAt: serverTimestamp(),
       createdAt: serverTimestamp(),
       createdBy: userId,
       active: true,
+    })
+
+    transaction.set(cashMovementReference, {
+      businessDate,
+      type: 'income',
+      source: 'sales_payment',
+      amountCents: payment.amountCents,
+      paymentMethod: payment.method,
+      concept: `Cobro nota ${note.folioDisplay} - ${
+        note.customerSnapshot.companyName ||
+        note.customerSnapshot.contactName
+      }`,
+      quantity: 1,
+      observations: '',
+      noteId,
+      folioDisplay: note.folioDisplay,
+      paymentId: paymentReference.id,
+      occurredAt: serverTimestamp(),
+      createdAt: serverTimestamp(),
+      createdBy: userId,
     })
 
     return {

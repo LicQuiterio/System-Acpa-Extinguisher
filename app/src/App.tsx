@@ -8,6 +8,7 @@ import { ClientDetailPage } from './pages/ClientDetailPage'
 import { SalesNotePage } from './pages/SalesNotePage'
 import { SalesNotesHistoryPage } from './pages/SalesNoteHistoryPage'
 import { SalesNoteDetailPage } from './pages/SalesNoteDetailPage'
+import { CashClosingPage } from './pages/CashClosingPage'
 
 
 function App() {
@@ -22,6 +23,7 @@ function App() {
         <Route path="/sales/new" element={<SalesNotePage />} />
         <Route path='/sales' element={<SalesNotesHistoryPage/>} />
         <Route path='/sales/:noteId' element={<SalesNoteDetailPage/>} />
+        <Route path="/cash" element={<CashClosingPage />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
