@@ -1,22 +1,53 @@
-import { useEffect, useState } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
-import { SalesClientForm } from '../components/SalesClientForm'
 import { getClients } from '../services/clientService'
 import {
   getSalesClientDisplayName,
   isSalesClient,
   type Client,
 } from '../types/client'
-import { canManageSalesNotes } from '../types/member'
+
+type ClientStatusFilter =
+  | 'all'
+  | 'active'
+  | 'inactive'
+
+type ClientTypeFilter =
+  | 'all'
+  | 'individual'
+  | 'company'
+
+function getClientName(client: Client): string {
+  return isSalesClient(client)
+    ? getSalesClientDisplayName(client)
+    : client.name
+}
+
+function normalizeSearch(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLocaleLowerCase('es-MX')
+    .trim()
+}
 
 export function ClientsPage() {
-  const { user, member } = useAuth()
+  const { member } = useAuth()
 
-  const [clients, setClients] = useState<Client[]>([])
+  const [clients, setClients] =
+    useState<Client[]>([])
   const [loading, setLoading] = useState(true)
-  const [showForm, setShowForm] = useState(false)
   const [error, setError] = useState('')
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] =
+    useState<ClientStatusFilter>('all')
+  const [typeFilter, setTypeFilter] =
+    useState<ClientTypeFilter>('all')
 
   useEffect(() => {
     if (!member) return
@@ -47,28 +78,50 @@ export function ClientsPage() {
     }
   }, [member])
 
-  async function loadClients() {
-    if (!member) return
+  const filteredClients = useMemo(() => {
+    const normalizedSearch =
+      normalizeSearch(search)
 
-    setLoading(true)
-    setError('')
+    return clients.filter((client) => {
+      const salesClient = isSalesClient(client)
+        ? client
+        : null
 
-    try {
-      const loadedClients = await getClients(
-        member.businessId,
+      const matchesStatus =
+        statusFilter === 'all' ||
+        client.active ===
+          (statusFilter === 'active')
+
+      const matchesType =
+        typeFilter === 'all' ||
+        salesClient?.type === typeFilter
+
+      const searchableText = normalizeSearch(
+        [
+          getClientName(client),
+          client.contactName,
+          client.phone,
+          client.email,
+          salesClient?.address ?? '',
+          salesClient?.serviceAreaSnapshot
+            .displayName ?? '',
+        ].join(' '),
       )
 
-      setClients(loadedClients)
-    } catch {
-      setError(
-        'No fue posible cargar los clientes',
+      return (
+        matchesStatus &&
+        matchesType &&
+        searchableText.includes(normalizedSearch)
       )
-    } finally {
-      setLoading(false)
-    }
-  }
+    })
+  }, [
+    clients,
+    search,
+    statusFilter,
+    typeFilter,
+  ])
 
-  if (!member || !user) {
+  if (!member) {
     return (
       <main>
         <p>No tienes una membresía activa.</p>
@@ -76,121 +129,174 @@ export function ClientsPage() {
     )
   }
 
-  const canCreateClient =
-    canManageSalesNotes(member.role)
-
   return (
     <main>
       <header>
         <h1>Clientes</h1>
         <p>
-          Administra los clientes de{' '}
-          {member.businessId}
+          Consulta y administra la información de
+          tus clientes.
         </p>
       </header>
-
-      {canCreateClient && !showForm && (
-        <button
-          type="button"
-          onClick={() => {
-            setShowForm(true)
-            setError('')
-          }}
-        >
-          Nuevo cliente
-        </button>
-      )}
-
-      {showForm && canCreateClient && (
-        <SalesClientForm
-          businessId={member.businessId}
-          userId={user.uid}
-          onCancel={() => {
-            setShowForm(false)
-            setError('')
-          }}
-          onCreated={async () => {
-            setShowForm(false)
-            await loadClients()
-          }}
-        />
-      )}
 
       {error && <p role="alert">{error}</p>}
 
       <section>
+        <h2>Buscar clientes</h2>
+
+        <div className="clients-filter-grid">
+          <label htmlFor="clients-search">
+            Nombre, teléfono o zona
+            <input
+              id="clients-search"
+              type="search"
+              value={search}
+              placeholder="Buscar cliente"
+              onChange={(event) =>
+                setSearch(event.target.value)
+              }
+            />
+          </label>
+
+          <label htmlFor="clients-status-filter">
+            Estado
+            <select
+              id="clients-status-filter"
+              value={statusFilter}
+              onChange={(event) =>
+                setStatusFilter(
+                  event.target
+                    .value as ClientStatusFilter,
+                )
+              }
+            >
+              <option value="all">Todos</option>
+              <option value="active">Activos</option>
+              <option value="inactive">
+                Inactivos
+              </option>
+            </select>
+          </label>
+
+          <label htmlFor="clients-type-filter">
+            Tipo
+            <select
+              id="clients-type-filter"
+              value={typeFilter}
+              onChange={(event) =>
+                setTypeFilter(
+                  event.target
+                    .value as ClientTypeFilter,
+                )
+              }
+            >
+              <option value="all">Todos</option>
+              <option value="individual">
+                Particular
+              </option>
+              <option value="company">
+                Empresa
+              </option>
+            </select>
+          </label>
+        </div>
+
+        {!loading && (
+          <p className="clients-results-count">
+            Clientes encontrados:{' '}
+            <strong>{filteredClients.length}</strong>
+          </p>
+        )}
+      </section>
+
+      <section>
         <h2>Lista de clientes</h2>
 
-        {loading && <p>Cargando clientes...</p>}
+        {loading && (
+          <div
+            className="clients-table-skeleton"
+            role="status"
+            aria-label="Cargando clientes"
+          >
+            <div className="skeleton clients-table-skeleton-header" />
+            <div className="skeleton clients-table-skeleton-row" />
+            <div className="skeleton clients-table-skeleton-row" />
+            <div className="skeleton clients-table-skeleton-row" />
+          </div>
+        )}
 
         {!loading && clients.length === 0 && (
           <p>Aún no hay clientes registrados.</p>
         )}
 
-        {!loading && clients.length > 0 && (
-          <table>
-            <thead>
-              <tr>
-                <th>Cliente</th>
-                <th>Contacto</th>
-                <th>Teléfono</th>
-                <th>Zona</th>
-                <th>Registro</th>
-                <th>Estado</th>
-              </tr>
-            </thead>
+        {!loading &&
+          clients.length > 0 &&
+          filteredClients.length === 0 && (
+            <p>
+              Ningún cliente coincide con los
+              filtros seleccionados.
+            </p>
+          )}
 
-            <tbody>
-              {clients.map((client) => {
-                const salesClient =
-                  isSalesClient(client)
-                    ? client
-                    : null
+        {!loading &&
+          filteredClients.length > 0 && (
+            <table>
+              <thead>
+                <tr>
+                  <th>Cliente</th>
+                  <th>Contacto</th>
+                  <th>Teléfono</th>
+                  <th>Zona</th>
+                  <th>Registro</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
 
-                const displayName = salesClient
-                  ? getSalesClientDisplayName(
-                      salesClient,
-                    )
-                  : client.name
+              <tbody>
+                {filteredClients.map((client) => {
+                  const salesClient =
+                    isSalesClient(client)
+                      ? client
+                      : null
 
-                return (
-                  <tr key={client.id}>
-                    <td>
-                      <Link
-                        to={`/clients/${client.id}`}
-                      >
-                        {displayName}
-                      </Link>
-                    </td>
+                  return (
+                    <tr key={client.id}>
+                      <td>
+                        <Link
+                          to={`/clients/${client.id}`}
+                        >
+                          {getClientName(client)}
+                        </Link>
+                      </td>
 
-                    <td>{client.contactName}</td>
-                    <td>{client.phone}</td>
+                      <td>{client.contactName}</td>
+                      <td>{client.phone}</td>
 
-                    <td>
-                      {salesClient
-                        ? salesClient
-                            .serviceAreaSnapshot
-                            .displayName
-                        : 'Pendiente de actualizar'}
-                    </td>
+                      <td>
+                        {salesClient
+                          ? salesClient
+                              .serviceAreaSnapshot
+                              .displayName
+                          : 'Pendiente de actualizar'}
+                      </td>
 
-                    <td>
-                      {salesClient
-                        ? 'Ventas'
-                        : 'Anterior'}
-                    </td>
+                      <td>
+                        {salesClient
+                          ? 'Ventas'
+                          : 'Anterior'}
+                      </td>
 
-                    <td>
-                      {client.active
-                        ? 'Activo'
-                        : 'Inactivo'}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        )}
+                      <td>
+                        {client.active
+                          ? 'Activo'
+                          : 'Inactivo'}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
       </section>
     </main>
   )

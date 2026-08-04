@@ -7,6 +7,7 @@ import {
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { SalesNoteItemsEditor } from '../components/SalesNoteItemsEditor'
+import { SalesClientForm } from '../components/SalesClientForm'
 import { WhatsAppClientLink } from '../components/WhatsAppClientLink'
 import {
   SalesQuotationPrint,
@@ -106,6 +107,8 @@ export function SalesNotePage() {
 ] = useState(false)
   const [loadingClients, setLoadingClients] =
     useState(true)
+  const [showClientForm, setShowClientForm] =
+  useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
     const [saving, setSaving] = useState(false)
@@ -179,6 +182,43 @@ const [
       cancelled = true
     }
   }, [member])
+
+  async function handleClientCreated(
+  clientId: string,
+) {
+  const currentMember = member
+
+  if (!currentMember) {
+    setError('No existe una membresía activa')
+    return
+  }
+
+  setShowClientForm(false)
+  setLoadingClients(true)
+  setError('')
+
+  try {
+    const loadedClients = await getSalesClients(
+      currentMember.businessId,
+    )
+
+    const activeClients = loadedClients.filter(
+      (client) => client.active,
+    )
+
+    setClients(activeClients)
+    setSelectedClientId(clientId)
+    setMessage(
+      'Cliente registrado y seleccionado.',
+    )
+  } catch {
+    setError(
+      'El cliente fue registrado, pero no fue posible actualizar la lista.',
+    )
+  } finally {
+    setLoadingClients(false)
+  }
+}
 
 
   const selectedClient = useMemo(
@@ -273,6 +313,7 @@ const [
 
     function resetForm() {
     setSelectedClientId('')
+    setShowClientForm(false)
     setItems([])
     setPayments([])
     setApplyVat(false)
@@ -453,7 +494,7 @@ const [
 }
 }
 
-  if (!member) {
+  if (!member || !user) {
     return (
       <main>
         <p>No tienes una membresía activa.</p>
@@ -497,6 +538,12 @@ const [
             setError('')
             setMessage('')
           }}
+          className={
+            loadingClients
+              ? 'skeleton sales-client-loading'
+              : undefined
+          }
+          aria-busy={loadingClients}
         >
           <option value="">
             Selecciona un cliente
@@ -519,12 +566,40 @@ const [
           ))}
         </select>
 
-        <p>
+        <div className="sales-client-selection-actions">
+          <button
+            type="button"
+            className="button-secondary"
+            disabled={formLocked}
+            onClick={() => {
+              setShowClientForm(
+                (currentValue) => !currentValue,
+              )
+              setError('')
+              setMessage('')
+            }}
+          >
+            {showClientForm
+              ? 'Cerrar registro'
+              : 'Registrar nuevo cliente'}
+          </button>
           <Link to="/clients">
-            Crear o administrar clientes
+            Administrar clientes
           </Link>
-        </p>
+        </div>
       </section>
+
+      {showClientForm && !formLocked && (
+        <SalesClientForm
+          businessId={member.businessId}
+          userId={user.uid}
+          onCreated={handleClientCreated}
+          onCancel={() => {
+            setShowClientForm(false)
+            setError('')
+          }}
+        />
+      )}
 
       <SalesNoteItemsEditor
         items={items}
@@ -821,10 +896,11 @@ const [
       {error && <p role="alert">{error}</p>}
       {message && <p role="status">{message}</p>}
 
-      <footer>
+      <footer className="sales-note-actions">
         <button
           type="button"
           disabled={saving}
+          className="button-secondary"
           onClick={clearForm}
         >
           {createdNote
@@ -835,6 +911,7 @@ const [
         <button
           type="button"
           disabled={formLocked}
+          className="button-secondary"
           onClick={() =>
             void printTemporaryQuotation()
           }
@@ -856,7 +933,7 @@ const [
               : 'Registrar nota'}
          </button>
       </footer>
-      
+
       {selectedClient && (
         <WhatsAppClientLink
           phone={selectedClient.phone}
@@ -866,6 +943,7 @@ const [
           }
         />
       )}
+
       {printableQuotation && (
         <SalesDocumentPrint
           onFinished={

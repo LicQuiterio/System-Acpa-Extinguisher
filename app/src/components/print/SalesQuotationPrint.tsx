@@ -23,6 +23,7 @@ import type { SalesNoteLoan } from '../../types/salesNoteLoan'
 import { formatAmountInWords } from '../../utils/amountInWords'
 import { formatMoneyFromCents } from '../../utils/money'
 import '../../styles/print/SalesQuotationPrint.css'
+import reyesSignature from '../../assets/Firma_Reyes_ACPA.png'
 
 export type SalesQuotationPrintAmounts = {
   subtotalCents: number
@@ -716,10 +717,13 @@ export function SalesQuotationPrint({
             <p>
               {settings.representative.prefix}
             </p>
-            <div
-              className="quotation-signature-line"
-              aria-hidden="true"
-            />
+            <div className="quotation-signature-line">
+              <img
+                className="quotation-signature-image"
+                src={reyesSignature}
+                alt={`Firma de ${settings.representative.name}`}
+              />
+            </div>
             <strong>
               {settings.representative.name}
             </strong>

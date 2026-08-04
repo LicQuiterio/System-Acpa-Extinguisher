@@ -326,11 +326,21 @@
   }
 
   .quotation-signature-line {
-    width: 52mm;
-    height: 12mm;
-    margin: 0 auto 1.5mm;
-    border-bottom: 0.3mm solid #555;
-  }
+  display: flex;
+  width: 52mm;
+  height: 16mm;
+  margin: 0 auto 1.5mm;
+  align-items: flex-end;
+  justify-content: center;
+  border-bottom: 0.3mm solid #555;
+}
+
+.quotation-signature-image {
+  display: block;
+  max-width: 48mm;
+  max-height: 15mm;
+  object-fit: contain;
+}
 
   .quotation-closing {
     margin-top: 6mm;
@@ -547,8 +557,13 @@
 
   .quotation-signature-line {
     width: 45mm;
-    height: 6mm;
+    height: 14mm;
     margin-bottom: 1mm;
+  }
+  
+  .quotation-signature-image {
+    max-width: 42mm;
+    max-height: 13mm;
   }
 
   .quotation-closing {
