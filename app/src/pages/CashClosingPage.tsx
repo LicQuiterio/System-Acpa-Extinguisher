@@ -5,21 +5,25 @@ import {
   useState,
   type FormEvent,
 } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import {
-  getCashMovements,
+  closeCashDay,
+  getCashDayState,
+  initializeCashFund,
   registerCashOutflow,
 } from '../services/cashMovementService'
 import { getMemberDisplayNames } from '../services/memberService'
 import type {
   CashMovement,
+  CashClosing,
   RegisterCashOutflowInput,
 } from '../types/cashMovement'
 import { canManageSalesNotes } from '../types/member'
 import {
   calculateCashDailySummary,
   getBusinessDate,
+  resolveCashBusinessDate,
 } from '../utils/cashMovement'
 import {
   formatMoneyFromCents,
@@ -54,13 +58,29 @@ function formatTime(movement: CashMovement): string {
   }).format(movement.occurredAt.toDate())
 }
 
+function formatCashBalance(cents: number): string {
+  return `${cents < 0 ? '−' : ''}${formatMoneyFromCents(Math.abs(cents))}`
+}
+
 export function CashClosingPage() {
   const { user, member } = useAuth()
-  const businessDate = useMemo(() => getBusinessDate(), [])
+  const currentBusinessDate = useMemo(() => getBusinessDate(), [])
+  const [searchParams, setSearchParams] = useSearchParams()
+  const businessDate = resolveCashBusinessDate(
+    currentBusinessDate,
+    searchParams.get('cashDate'),
+    import.meta.env.DEV,
+  )
   const [movements, setMovements] = useState<CashMovement[]>([])
+  const [openingBalanceCents, setOpeningBalanceCents] = useState(0)
+  const [initialized, setInitialized] = useState(false)
+  const [closing, setClosing] = useState<CashClosing | null>(null)
   const [memberNames, setMemberNames] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [initializing, setInitializing] = useState(false)
+  const [closingDay, setClosingDay] = useState(false)
+  const [initialBalance, setInitialBalance] = useState('')
   const [formOpen, setFormOpen] = useState(false)
   const [type, setType] = useState<RegisterCashOutflowInput['type']>('expense')
   const [concept, setConcept] = useState('')
@@ -77,16 +97,19 @@ export function CashClosingPage() {
     setError('')
 
     try {
-      const nextMovements = await getCashMovements(
+      const state = await getCashDayState(
         member.businessId,
         businessDate,
       )
       const names = await getMemberDisplayNames(
         member.businessId,
-        nextMovements.map((movement) => movement.createdBy),
+        state.movements.map((movement) => movement.createdBy),
       )
 
-      setMovements(nextMovements)
+      setMovements(state.movements)
+      setOpeningBalanceCents(state.summary.openingBalanceCents)
+      setInitialized(Boolean(state.fund))
+      setClosing(state.closing)
       setMemberNames(names)
     } catch (caughtError) {
       setError(
@@ -104,17 +127,20 @@ export function CashClosingPage() {
 
     let cancelled = false
 
-    getCashMovements(member.businessId, businessDate)
-      .then(async (nextMovements) => ({
-        nextMovements,
+    getCashDayState(member.businessId, businessDate)
+      .then(async (state) => ({
+        state,
         names: await getMemberDisplayNames(
           member.businessId,
-          nextMovements.map((movement) => movement.createdBy),
+          state.movements.map((movement) => movement.createdBy),
         ),
       }))
-      .then(({ nextMovements, names }) => {
+      .then(({ state, names }) => {
         if (!cancelled) {
-          setMovements(nextMovements)
+          setMovements(state.movements)
+          setOpeningBalanceCents(state.summary.openingBalanceCents)
+          setInitialized(Boolean(state.fund))
+          setClosing(state.closing)
           setMemberNames(names)
         }
       })
@@ -137,11 +163,14 @@ export function CashClosingPage() {
   }, [businessDate, member])
 
   const summary = useMemo(
-    () => calculateCashDailySummary(movements),
-    [movements],
+    () => calculateCashDailySummary(movements, openingBalanceCents),
+    [movements, openingBalanceCents],
   )
   const canRegisterOutflow = member
     ? canManageSalesNotes(member.role)
+    : false
+  const canAdministerCash = member
+    ? ['owner', 'admin'].includes(member.role)
     : false
 
   function resetForm() {
@@ -201,10 +230,150 @@ export function CashClosingPage() {
     }
   }
 
+  async function handleInitialize(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (!member || !user || !canAdministerCash) return
+
+    setInitializing(true)
+    setError('')
+
+    try {
+      await initializeCashFund(
+        member.businessId,
+        user.uid,
+        businessDate,
+        parseMoneyToCents(initialBalance),
+      )
+      setInitialBalance('')
+      setMessage('Fondo inicial configurado correctamente.')
+      await loadMovements()
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'No fue posible configurar el fondo inicial.',
+      )
+    } finally {
+      setInitializing(false)
+    }
+  }
+
+  async function handleCloseDay() {
+    if (!member || !user || !canAdministerCash) return
+
+    if (
+      closing?.status !== 'closing' &&
+      !window.confirm(
+        '¿Cerrar la caja de hoy? Después no podrán registrarse más movimientos con esta fecha.',
+      )
+    ) {
+      return
+    }
+
+    setClosingDay(true)
+    setError('')
+    setMessage('')
+
+    try {
+      await closeCashDay(member.businessId, user.uid, businessDate)
+      setMessage('Corte de caja cerrado correctamente.')
+      await loadMovements()
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'No fue posible cerrar la caja.',
+      )
+    } finally {
+      setClosingDay(false)
+    }
+  }
+
   if (!member) {
     return (
       <main>
         <p role="alert">Necesitas una membresía activa para consultar la caja.</p>
+      </main>
+    )
+  }
+
+  const developmentDateControl = import.meta.env.DEV ? (
+    <label className="cash-test-date">
+      Fecha de prueba (solo Caja)
+      <input
+        type="date"
+        value={businessDate}
+        onChange={(event) => {
+          const nextSearchParams = new URLSearchParams(searchParams)
+
+          setLoading(true)
+          setError('')
+          setMessage('')
+          setFormOpen(false)
+
+          if (event.target.value === currentBusinessDate) {
+            nextSearchParams.delete('cashDate')
+          } else {
+            nextSearchParams.set('cashDate', event.target.value)
+          }
+
+          setSearchParams(nextSearchParams, { replace: true })
+        }}
+      />
+    </label>
+  ) : null
+
+
+  if (!loading && !initialized) {
+    return (
+      <main className="cash-closing-page">
+        <header className="cash-closing-header">
+          <div>
+            <span className="page-eyebrow">Control financiero diario</span>
+            <h1>Inicializar caja</h1>
+            <p>{formatBusinessDate(businessDate)}</p>
+          </div>
+          {developmentDateControl}
+        </header>
+
+        {message && <p role="status">{message}</p>}
+        {error && <p role="alert">{error}</p>}
+
+        {canAdministerCash ? (
+          <section aria-labelledby="cash-initial-title">
+            <h2 id="cash-initial-title">Fondo inicial único</h2>
+            <p>
+              Captura el dinero físico que existe ahora en caja. Este valor
+              solo puede configurarse una vez.
+            </p>
+
+            <form onSubmit={handleInitialize}>
+              <fieldset disabled={initializing} className="cash-initial-form">
+                <label>
+                  Dinero actual en caja
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.01"
+                    value={initialBalance}
+                    onChange={(event) => setInitialBalance(event.target.value)}
+                    placeholder="188.00"
+                    required
+                  />
+                </label>
+                <button type="submit">
+                  {initializing ? 'Configurando...' : 'Configurar fondo inicial'}
+                </button>
+              </fieldset>
+            </form>
+          </section>
+        ) : (
+          <p role="alert">
+            El dueño o la administradora deben configurar el fondo inicial antes de usar Caja.
+          </p>
+        )}
       </main>
     )
   }
@@ -218,24 +387,45 @@ export function CashClosingPage() {
           <p>{formatBusinessDate(businessDate)}</p>
         </div>
 
-        {canRegisterOutflow && (
-          <button
-            type="button"
-            onClick={() => {
-              setFormOpen(true)
-              setError('')
-              setMessage('')
-            }}
-          >
-            Registrar salida / gasto
-          </button>
-        )}
+        <div className="cash-header-actions">
+          {developmentDateControl}
+          {canAdministerCash && closing?.status !== 'closed' && (
+            <button
+              type="button"
+              className="button-secondary"
+              disabled={closingDay}
+              onClick={() => void handleCloseDay()}
+            >
+              {closingDay
+                ? 'Cerrando...'
+                : closing?.status === 'closing'
+                  ? 'Completar cierre'
+                  : 'Cerrar caja del día'}
+            </button>
+          )}
+          {canRegisterOutflow && !closing && (
+            <button
+              type="button"
+              onClick={() => {
+                setFormOpen(true)
+                setError('')
+                setMessage('')
+              }}
+            >
+              Registrar salida / gasto
+            </button>
+          )}
+        </div>
       </header>
 
       <section className="cash-summary" aria-labelledby="cash-summary-title">
         <h2 id="cash-summary-title">Resumen del día</h2>
 
         <dl className="cash-summary-grid">
+          <div>
+            <dt>Saldo inicial del día</dt>
+            <dd>{formatCashBalance(summary.openingBalanceCents)}</dd>
+          </div>
           <div>
             <dt>Ingresos en efectivo</dt>
             <dd className="cash-amount--positive">
@@ -250,7 +440,7 @@ export function CashClosingPage() {
           </div>
           <div className="cash-summary-total">
             <dt>Efectivo estimado en caja</dt>
-            <dd>{summary.estimatedCashCents < 0 ? '−' : ''}{formatMoneyFromCents(Math.abs(summary.estimatedCashCents))}</dd>
+            <dd>{formatCashBalance(summary.estimatedCashCents)}</dd>
           </div>
           <div>
             <dt>Transferencias y tarjeta</dt>
@@ -261,6 +451,11 @@ export function CashClosingPage() {
         <p className="cash-summary-detail">
           Gastos: {formatMoneyFromCents(summary.expenseCents)} · Retiros: {formatMoneyFromCents(summary.withdrawalCents)}
         </p>
+        {closing?.status === 'closed' && (
+          <p className="cash-summary-detail" role="status">
+            Caja cerrada. Este saldo se arrastrará automáticamente al siguiente día.
+          </p>
+        )}
       </section>
 
       {message && <p role="status">{message}</p>}

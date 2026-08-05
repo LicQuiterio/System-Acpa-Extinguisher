@@ -47,6 +47,16 @@ service cloud.firestore {
         ];
     }
 
+    function canAdministerCash(businessId) {
+      return isActiveMember(businessId)
+        && get(
+          /databases/$(database)/documents/members/$(request.auth.uid)
+        ).data.role in [
+          'owner',
+          'admin'
+        ];
+    }
+
     function isValidMunicipality(municipality) {
       return municipality in [
         'Bacalar',
@@ -376,6 +386,76 @@ service cloud.firestore {
         && data.occurredAt == request.time
         && data.createdAt == request.time
         && data.createdBy == request.auth.uid;
+    }
+
+    function validCashFundData(data) {
+      return data.keys().hasOnly([
+          'initialBalanceCents',
+          'initializedOn',
+          'initializedAt',
+          'initializedBy'
+        ])
+        && data.initialBalanceCents is int
+        && data.initialBalanceCents >= 0
+        && data.initializedOn is string
+        && data.initializedOn.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+        && data.initializedAt == request.time
+        && data.initializedBy == request.auth.uid;
+    }
+
+    function validCashClosingStart(data) {
+      return data.keys().hasOnly([
+          'businessDate',
+          'status',
+          'openingBalanceCents',
+          'cashIncomeCents',
+          'electronicIncomeCents',
+          'expenseCents',
+          'withdrawalCents',
+          'closingBalanceCents',
+          'movementCount',
+          'startedAt',
+          'startedBy',
+          'closedAt',
+          'closedBy'
+        ])
+        && data.businessDate is string
+        && data.businessDate.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+        && data.status == 'closing'
+        && data.openingBalanceCents == null
+        && data.cashIncomeCents == null
+        && data.electronicIncomeCents == null
+        && data.expenseCents == null
+        && data.withdrawalCents == null
+        && data.closingBalanceCents == null
+        && data.movementCount == null
+        && data.startedAt == request.time
+        && data.startedBy == request.auth.uid
+        && data.closedAt == null
+        && data.closedBy == null;
+    }
+
+    function validCompletedCashClosing(data) {
+      return data.status == 'closed'
+        && data.openingBalanceCents is int
+        && data.cashIncomeCents is int
+        && data.cashIncomeCents >= 0
+        && data.electronicIncomeCents is int
+        && data.electronicIncomeCents >= 0
+        && data.expenseCents is int
+        && data.expenseCents >= 0
+        && data.withdrawalCents is int
+        && data.withdrawalCents >= 0
+        && data.closingBalanceCents is int
+        && data.closingBalanceCents
+          == data.openingBalanceCents
+            + data.cashIncomeCents
+            - data.expenseCents
+            - data.withdrawalCents
+        && data.movementCount is int
+        && data.movementCount >= 0
+        && data.closedAt == request.time
+        && data.closedBy == request.auth.uid;
     }
 
     function validSalesPaymentCashMovement(
@@ -1436,11 +1516,56 @@ function technicianUpdatesServiceDates(businessId) {
         }
       }
 
+      match /cashFund/{fundId} {
+        allow read: if isActiveMember(businessId);
+
+        allow create: if fundId == 'main'
+          && canAdministerCash(businessId)
+          && validCashFundData(request.resource.data);
+
+        allow update, delete: if false;
+      }
+
+      match /cashClosings/{closingId} {
+        allow read: if isActiveMember(businessId);
+
+        allow create: if canAdministerCash(businessId)
+          && closingId == request.resource.data.businessDate
+          && exists(
+            /databases/$(database)/documents/businesses/$(businessId)/cashFund/main
+          )
+          && validCashClosingStart(request.resource.data);
+
+        allow update: if canAdministerCash(businessId)
+          && resource.data.status == 'closing'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status',
+            'openingBalanceCents',
+            'cashIncomeCents',
+            'electronicIncomeCents',
+            'expenseCents',
+            'withdrawalCents',
+            'closingBalanceCents',
+            'movementCount',
+            'closedAt',
+            'closedBy'
+          ])
+          && validCompletedCashClosing(request.resource.data);
+
+        allow delete: if false;
+      }
+
       match /cashMovements/{movementId} {
         allow read: if isActiveMember(businessId);
 
         allow create: if validCashMovementData(
             request.resource.data
+          )
+          && exists(
+            /databases/$(database)/documents/businesses/$(businessId)/cashFund/main
+          )
+          && !exists(
+            /databases/$(database)/documents/businesses/$(businessId)/cashClosings/$(request.resource.data.businessDate)
           )
           && (
             (

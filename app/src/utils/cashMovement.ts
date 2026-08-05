@@ -20,10 +20,22 @@ export function getBusinessDate(date = new Date()): string {
   return `${values.year}-${values.month}-${values.day}`
 }
 
+export function resolveCashBusinessDate(
+  currentDate: string,
+  requestedDate: string | null,
+  allowOverride: boolean,
+): string {
+  return allowOverride && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate ?? '')
+    ? requestedDate!
+    : currentDate
+}
+
 export function calculateCashDailySummary(
   movements: readonly CashMovement[],
+  openingBalanceCents = 0,
 ): CashDailySummary {
   const summary: CashDailySummary = {
+    openingBalanceCents,
     cashIncomeCents: 0,
     electronicIncomeCents: 0,
     expenseCents: 0,
@@ -49,7 +61,29 @@ export function calculateCashDailySummary(
   summary.totalOutflowCents =
     summary.expenseCents + summary.withdrawalCents
   summary.estimatedCashCents =
-    summary.cashIncomeCents - summary.totalOutflowCents
+    openingBalanceCents +
+    summary.cashIncomeCents -
+    summary.totalOutflowCents
 
   return summary
+}
+
+export function calculateAccumulatedCashDailySummary(
+  movements: readonly CashMovement[],
+  businessDate: string,
+  initialBalanceCents: number,
+): CashDailySummary {
+  const openingBalanceCents = calculateCashDailySummary(
+    movements.filter(
+      (movement) => movement.businessDate < businessDate,
+    ),
+    initialBalanceCents,
+  ).estimatedCashCents
+
+  return calculateCashDailySummary(
+    movements.filter(
+      (movement) => movement.businessDate === businessDate,
+    ),
+    openingBalanceCents,
+  )
 }

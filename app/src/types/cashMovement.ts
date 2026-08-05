@@ -28,6 +28,29 @@ export type CashMovement = {
   createdBy: string
 }
 
+export type CashFund = {
+  initialBalanceCents: number
+  initializedOn: string
+  initializedAt: Timestamp
+  initializedBy: string
+}
+
+export type CashClosing = {
+  businessDate: string
+  status: 'closing' | 'closed'
+  openingBalanceCents: number | null
+  cashIncomeCents: number | null
+  electronicIncomeCents: number | null
+  expenseCents: number | null
+  withdrawalCents: number | null
+  closingBalanceCents: number | null
+  movementCount: number | null
+  startedAt: Timestamp
+  startedBy: string
+  closedAt: Timestamp | null
+  closedBy: string | null
+}
+
 export type RegisterCashOutflowInput = {
   type: 'expense' | 'owner_withdrawal'
   amountCents: number
@@ -37,10 +60,18 @@ export type RegisterCashOutflowInput = {
 }
 
 export type CashDailySummary = {
+  openingBalanceCents: number
   cashIncomeCents: number
   electronicIncomeCents: number
   expenseCents: number
   withdrawalCents: number
   totalOutflowCents: number
   estimatedCashCents: number
+}
+
+export type CashDayState = {
+  fund: CashFund | null
+  movements: CashMovement[]
+  summary: CashDailySummary
+  closing: CashClosing | null
 }

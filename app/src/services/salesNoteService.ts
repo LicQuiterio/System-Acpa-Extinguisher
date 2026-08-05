@@ -375,6 +375,20 @@ export async function createSalesNote(
   )
 
   const businessDate = getBusinessDate()
+  const cashFundReference = doc(
+    db,
+    'businesses',
+    businessId,
+    'cashFund',
+    'main',
+  )
+  const cashClosingReference = doc(
+    db,
+    'businesses',
+    businessId,
+    'cashClosings',
+    businessDate,
+  )
 
   return runTransaction(db, async (transaction) => {
     const clientSnapshot =
@@ -382,6 +396,21 @@ export async function createSalesNote(
 
     const counterSnapshot =
       await transaction.get(counterReference)
+
+    if (input.payments.length > 0) {
+      const [cashFundSnapshot, cashClosingSnapshot] = await Promise.all([
+        transaction.get(cashFundReference),
+        transaction.get(cashClosingReference),
+      ])
+
+      if (!cashFundSnapshot.exists()) {
+        throw new Error('Primero configura el fondo inicial de caja')
+      }
+
+      if (cashClosingSnapshot.exists()) {
+        throw new Error('La caja de este día ya está cerrada')
+      }
+    }
 
     if (!clientSnapshot.exists()) {
       throw new Error('El cliente no existe')
@@ -616,10 +645,36 @@ export async function registerSalesNotePayment(
   )
 
   const businessDate = getBusinessDate()
+  const cashFundReference = doc(
+    db,
+    'businesses',
+    businessId,
+    'cashFund',
+    'main',
+  )
+  const cashClosingReference = doc(
+    db,
+    'businesses',
+    businessId,
+    'cashClosings',
+    businessDate,
+  )
 
   return runTransaction(db, async (transaction) => {
-    const noteSnapshot =
-      await transaction.get(noteReference)
+    const [noteSnapshot, cashFundSnapshot, cashClosingSnapshot] =
+      await Promise.all([
+        transaction.get(noteReference),
+        transaction.get(cashFundReference),
+        transaction.get(cashClosingReference),
+      ])
+
+    if (!cashFundSnapshot.exists()) {
+      throw new Error('Primero configura el fondo inicial de caja')
+    }
+
+    if (cashClosingSnapshot.exists()) {
+      throw new Error('La caja de este día ya está cerrada')
+    }
 
     if (!noteSnapshot.exists()) {
       throw new Error('La nota no existe')
